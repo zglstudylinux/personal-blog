@@ -13,7 +13,7 @@
      file    : Markdown 文件路径（相对站点根，默认 posts/<slug>.md）
    ============================================================ */
 window.POSTS = [
-  {
+{
     slug: "rtos-priority-inversion",
     title: "RTOS 里的优先级反转：一次调试记录",
     date: "2026-08-03",
@@ -34,5 +34,14 @@ window.POSTS = [
     date: "2026-06-25",
     excerpt: "串口收不定长数据时，环形缓冲区配合空闲中断比轮询和阻塞都好用。附一份可直接用的 C 实现。",
     tags: ["UART", "C", "裸机"]
+  },
+  {
+    slug: "ab5766-le-mic",
+    title: "AB5766 LE Mic 音频算法调用链与测试快速入门",
+    date: "2026-08-11",
+    excerpt: "AB5766",
+    category: "AB5766",
+    tags: ["AB5766"],
+    file: "posts/ab5766-le-mic.md"
   }
 ];
