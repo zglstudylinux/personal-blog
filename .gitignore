@@ -19,3 +19,9 @@ Thumbs.db
 # Claude Code 本地工具与技能（开发期辅助，不属于博客站点本身）
 .claude/
 taste-skill/
+
+# Worker 后端依赖与本地产物（代码入库，依赖不入库）
+api/node_modules/
+api/.wrangler/
+api/.dev.vars
+api/*.log

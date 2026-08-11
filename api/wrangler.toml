@@ -1,0 +1,35 @@
+name = "blog-api"
+main = "src/worker.js"
+compatibility_date = "2024-05-01"
+
+# ------------------------------------------------------------------
+# 这是一个 Cloudflare Worker 后端，与静态博客部署在**不同**的域名上。
+# 静态站点继续放在 GitHub Pages，前端通过 SITE_CONFIG.apiBase 指向本 Worker。
+# 所有机密都在 Worker Secret 中，绝不写进本文件，也绝不写进静态站点的 js/。
+# ------------------------------------------------------------------
+
+# 图片采用「直接提交进 Git 仓库」方案：提交到 assets/images/，随静态站点
+# 一起部署到 GitHub Pages。不需要 R2 / 对象存储 / 额外绑定。
+
+# 下面列出的全部是“变量名”，不是值。真实值用 `wrangler secret put <NAME>` 写入，
+# 不要在这里填真实 token / secret / private key。
+# ---------------------------------------------------------------
+# 需要设置的 Secret：
+#   GH_CLIENT_ID        GitHub OAuth App 的 Client ID
+#   GH_CLIENT_SECRET    GitHub OAuth App 的 Client Secret
+#   SESSION_SECRET      用于签发 / 校验会话 JWT 的随机字符串（至少 32 字节）
+#   ALLOWED_GH_IDS      允许发布的 GitHub 数字 user id 列表，逗号分隔（作者白名单）
+#   GH_REPO             目标仓库，格式 owner/repo，例如 zglstudylinux/personal-blog
+#   GH_API_TOKEN        用于调用 GitHub Contents/PR API 的 Personal Access Token
+#                       需要 repo 权限（或对私有仓库的 contents:write + pull_requests:write）
+# ---------------------------------------------------------------
+
+[vars]
+# 这里只能放非机密配置。CORS 白名单等可放这里。
+SITE_ORIGIN = "https://zglstudylinux.github.io"
+LOCAL_ORIGIN = "http://localhost:8000"
+# 图片上传限制（服务端校验，与前端一致）
+IMAGE_MAX_BYTES = "5242880"
+IMAGE_TYPES = "image/png,image/jpeg,image/webp"
+# 图片提交的目标分支（默认 main，随静态站点部署）
+IMAGES_BRANCH = "main"

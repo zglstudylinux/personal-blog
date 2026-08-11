@@ -1,0 +1,15 @@
+{
+  "name": "blog-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloudflare Worker: GitHub OAuth + 会话 + 图片上传 + 发布 PR 的后端 API",
+  "main": "src/worker.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}

@@ -12,5 +12,21 @@ window.SITE_CONFIG = {
   // 默认主题：dark / light / auto（auto 跟随系统）
   defaultTheme: "dark",
   // 文章 Markdown 所在目录（相对于站点根）
-  postsDir: "posts"
+  postsDir: "posts",
+
+  // ---- 在线编辑/发布相关（公开配置，不含任何密钥）----
+  // 发布后端 API 基础地址。留空表示尚未启用在线发布，
+  // 编辑器将只提供本地草稿和导出 Markdown 功能。
+  // 启用后填 Cloudflare Worker 的地址，例如 "https://blog-api.example.workers.dev"
+  // 本地联调时临时填 wrangler dev 的 "http://localhost:8787"；联调完上线前务必改回 "" 或正式 Worker 地址
+  apiBase: "",
+  // 允许调用 API 的来源（CORS / Origin 校验在服务端进行）
+  siteOrigin: "https://zglstudylinux.github.io",
+  // 仓库已提交图片的 raw 直链前缀（公开仓库，非密钥）。仅用于编辑器预览：
+  // 正文里存的是仓库相对路径 assets/images/...，本地无该文件时预览改写成此直链，
+  // 避免本地 404。不影响发布内容（发布仍是仓库相对路径）。
+  gitRawBase: "https://raw.githubusercontent.com/zglstudylinux/personal-blog/main",
+  // 图片上传限制（前端预校验，服务端仍会再校验一次）
+  imageMaxBytes: 5 * 1024 * 1024, // 5 MB
+  imageTypes: ["image/png", "image/jpeg", "image/webp"]
 };

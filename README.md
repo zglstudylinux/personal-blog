@@ -9,6 +9,8 @@
 
 - **纯静态**：HTML + CSS + 原生 JS，没有框架、没有构建步骤，复制文件即用。
 - **Markdown 内容管理**：文章放在 `posts/` 目录，在 `js/posts.js` 登记后自动出现在列表。
+- **网页写作**：内置 Markdown 编辑器（`editor.html`），实时预览、草稿、粘贴截图、专栏与标签、在线发布。
+- **专栏**：每篇文章一个主专栏（`category`）+ 多个标签（`tags`），首页可按专栏筛选，文章页有同专栏前后篇导航。
 - **深浅色主题**：跟随系统偏好，可手动切换，选择保存在 localStorage。
 - **响应式**：桌面 / 平板 / 手机自适应，遵守 `prefers-reduced-motion`。
 - **可部署**：GitHub Pages 或 EdgeOne Pages，纯静态无需后端。
@@ -20,22 +22,29 @@ blog/
 ├── index.html              # 文章列表（首页）
 ├── post.html               # 文章详情页
 ├── about.html              # 关于页
+├── editor.html             # ★ 网页 Markdown 编辑器（写作/预览/草稿/粘贴/发布）
 ├── css/
-│   └── style.css           # 全部样式（含深浅色主题、代码高亮、响应式）
+│   └── style.css           # 全部样式（含深浅色主题、代码高亮、编辑器、专栏、响应式）
 ├── js/
-│   ├── config.js           # 站点配置（名称、作者、默认主题）
+│   ├── config.js           # 站点配置（名称、作者、默认主题、apiBase、图片限制）
 │   ├── posts.js            # ★ 文章清单（新增文章在这里登记）
-│   ├── markdown.js         # 零依赖 Markdown 解析器
+│   ├── markdown.js         # 零依赖 Markdown 解析器（带 URL 协议白名单）
 │   ├── theme.js            # 深浅色切换
 │   ├── main.js             # 页脚年份、导航高亮
-│   ├── list.js             # 首页列表渲染 + 搜索 + 标签筛选
-│   ├── post.js             # 详情页：加载并渲染 Markdown
-│   └── about.js            # 关于页：加载 about.md
+│   ├── list.js             # 首页列表渲染 + 搜索 + 标签筛选 + 专栏筛选
+│   ├── post.js             # 详情页：加载并渲染 Markdown、专栏导航
+│   ├── about.js            # 关于页：加载 about.md
+│   └── editor.js           # 编辑器：预览/草稿/粘贴/导出/登录/发布
 ├── posts/
 │   ├── rtos-priority-inversion.md
 │   ├── adc-sampling-stm32.md
 │   ├── uart-ring-buffer.md
 │   └── about.md            # 关于页内容
+├── api/                    # ★ 在线发布后端（Cloudflare Worker），独立部署
+│   ├── wrangler.toml
+│   ├── package.json
+│   ├── README.md           # 后端部署与 Secret 设置说明
+│   └── src/                # worker.js + lib/{http,jwt,validate,github,publish,images}.js
 └── assets/
     └── favicon.svg
 ```
@@ -67,12 +76,15 @@ npx serve
   title: "我的新文章",
   date: "2026-08-10",
   excerpt: "一句话摘要，显示在列表页。",
-  tags: ["STM32", "调试"],
+  category: "STM32 外设",               // 主专栏（一篇文章只属于一个专栏，可留空）
+  tags: ["STM32", "调试"],              // 标签数组，用于筛选
   file: "posts/my-new-post.md"         // 可省略，默认就是 posts/<slug>.md
 }
 ```
 
 3. 刷新首页即可看到。
+
+> 也可以直接用网页编辑器写作并在 GitHub 登录后发布，编辑器会自动生成上面的 Markdown 文件和注册表条目（见下文「在线写作与发布」）。
 
 ## 编辑「关于」页
 
@@ -80,12 +92,46 @@ npx serve
 
 ## 修改站点信息
 
-改 [`js/config.js`](js/config.js)：站点名、副标题、作者、默认主题。
+改 [`js/config.js`](js/config.js)：站点名、副标题、作者、默认主题。`apiBase` 留空时编辑器只提供本地草稿和导出；填上 Worker 地址后启用在线登录与发布。
 
 ## 修改样式
 
 改 [`css/style.css`](css/style.css) 顶部的 `:root` 和 `[data-theme="..."]` 里的 CSS 变量：
 颜色在 `--accent`（强调色）、`--bg`（背景）等，改一处全站联动。
+
+## 在线写作与发布
+
+除了手工写 `.md` + 改 `posts.js`，也可以用网页编辑器完成整个流程。
+
+### 本地模式（开箱即用，无需后端）
+
+打开 `editor.html`：
+
+- 实时预览（复用文章详情页的 Markdown 解析器）。
+- 标题 / slug / 日期 / 专栏 / 标签 / 摘要 元数据编辑。
+- 草稿保存在浏览器 localStorage，刷新可恢复，支持多草稿。
+- 粘贴截图（Ctrl/⌘+V）插入图片。本地模式下图片是 `blob:` 预览，只在本机可见。
+- 导出 `.md` 文件，手工放进 `posts/` 并登记到 `posts.js`。
+
+### 在线发布（需部署 `api/` 后端）
+
+要实现「网页里直接写 + 粘贴截图永久保存 + 一键发布」，需要部署 `api/` 里的 Cloudflare Worker：
+
+1. 按 [`api/README.md`](api/README.md) 创建 Worker、OAuth App，并设置 Secret。
+2. 把 Worker 地址填进 [`js/config.js`](js/config.js) 的 `apiBase`。
+3. 在编辑器里用 GitHub 登录（只允许白名单内的 GitHub user id 发布）。
+4. 粘贴的截图会提交到仓库的 `assets/images/`，Markdown 里保存的是站点根相对路径，随 GitHub Pages 一起部署。
+5. 点「发布」后，Worker 会在 `publish/<slug>-<时间戳>` 分支同时提交 Markdown 正文和 `js/posts.js` 注册表，并创建 Pull Request。合并 PR 后 GitHub Pages 自动部署。
+
+> 预览与正文路径的拆分：编辑器正文里存的是仓库相对路径 `assets/images/...`（发布到线上后正确），但本地工作副本里没有 Worker 刚提交的图，static server 会 404。编辑器预览会把 `<img src="assets/images/...">` 临时改写成 `raw.githubusercontent.com/.../main` 直链显示，只影响预览 DOM、不改正文，发布内容仍是正确的仓库相对路径。
+
+安全要点：
+
+- **GitHub Token / OAuth Secret 只存在 Worker Secret 里**，不写进 `wrangler.toml`、`js/`、HTML 或 localStorage。
+- 前端只持 HttpOnly 会话 cookie，永远拿不到 PAT。
+- 服务端重新校验 slug / 日期 / 标题 / 专栏 / 标签 / Markdown，不信任浏览器校验结果。
+- 拒绝 `javascript:` / `vbscript:` / 危险 `data:` 协议，禁止原始 HTML 注入。
+- 发布前检测 slug 冲突，分支名由服务端生成，不接受客户端传的任意路径。
 
 ## 部署到 GitHub Pages
 

@@ -1,5 +1,5 @@
 /* ============================================================
-   list.js - 首页文章列表渲染 + 搜索 + 标签筛选
+   list.js - 首页文章列表渲染 + 搜索 + 标签/专栏筛选
    ============================================================ */
 (function () {
   "use strict";
@@ -8,10 +8,18 @@
   var container = document.getElementById("postList");
   var searchInput = document.getElementById("searchInput");
   var tagFilter = document.getElementById("tagFilter");
+  var catFilter = document.getElementById("catFilter");
   var emptyHint = document.getElementById("emptyHint");
   if (!container) return;
 
   var activeTag = null;
+  var activeCat = null;
+
+  // 从 ?cat=xxx 读取初始专栏筛选
+  (function readQuery() {
+    var c = new URLSearchParams(location.search).get("cat");
+    if (c) activeCat = c;
+  })();
 
   // 格式化日期：2026-08-03 -> 08月03日；保留年份在 title 属性
   function fmtDate(d) {
@@ -27,6 +35,18 @@
       (p.tags || []).forEach(function (t) { map[t] = (map[t] || 0) + 1; });
     });
     return Object.keys(map).sort(function (a, b) { return map[b] - map[a]; });
+  }
+
+  // 采集所有专栏及其计数（按文章数降序）
+  function allCats() {
+    var map = {};
+    POSTS.forEach(function (p) {
+      var c = p.category || "未分类";
+      map[c] = (map[c] || 0) + 1;
+    });
+    return Object.keys(map)
+      .sort(function (a, b) { return map[b] - map[a]; })
+      .map(function (c) { return { name: c, count: map[c] }; });
   }
 
   function renderTags() {
@@ -47,6 +67,28 @@
     });
   }
 
+  function renderCats() {
+    if (!catFilter) return;
+    var cats = allCats();
+    catFilter.innerHTML = "";
+    var label = document.createElement("span");
+    label.className = "filter-label";
+    label.textContent = "专栏：";
+    catFilter.appendChild(label);
+    cats.forEach(function (c) {
+      var chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "cat-chip" + (activeCat === c.name ? " is-active" : "");
+      chip.textContent = c.name + " " + c.count;
+      chip.addEventListener("click", function () {
+        activeCat = (activeCat === c.name) ? null : c.name;
+        renderCats();
+        renderList();
+      });
+      catFilter.appendChild(chip);
+    });
+  }
+
   function renderList() {
     var q = (searchInput && searchInput.value || "").trim().toLowerCase();
     var list = POSTS.slice().sort(function (a, b) {
@@ -54,9 +96,14 @@
     });
 
     list = list.filter(function (p) {
+      if (activeCat) {
+        var pc = p.category || "未分类";
+        if (pc !== activeCat) return false;
+      }
       if (activeTag && !(p.tags || []).includes(activeTag)) return false;
       if (q) {
-        var hay = (p.title + " " + (p.excerpt || "") + " " + (p.tags || []).join(" ")).toLowerCase();
+        var hay = (p.title + " " + (p.excerpt || "") + " " +
+          (p.category || "") + " " + (p.tags || []).join(" ")).toLowerCase();
         if (hay.indexOf(q) === -1) return false;
       }
       return true;
@@ -80,6 +127,15 @@
 
       var main = document.createElement("div");
       main.className = "post-card__main";
+
+      // 专栏标记（行首，紧凑）
+      if (p.category) {
+        var cat = document.createElement("a");
+        cat.className = "post-card__cat";
+        cat.href = "index.html?cat=" + encodeURIComponent(p.category);
+        cat.textContent = p.category;
+        main.appendChild(cat);
+      }
 
       var title = document.createElement("h2");
       title.className = "post-card__title";
@@ -118,6 +174,7 @@
     searchInput.addEventListener("input", renderList);
   }
 
+  renderCats();
   renderTags();
   renderList();
 })();

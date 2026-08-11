@@ -20,17 +20,46 @@
 
   function fmtMeta(p) {
     var cfg = window.SITE_CONFIG || {};
-    var parts = [];
-    parts.push('<time datetime="' + p.date + '">' + p.date + '</time>');
+    // 用 DOM API 构建，避免标题/标签/专栏等来自编辑器的内容进入未经处理的 innerHTML
+    var wrap = document.createElement("div");
+    wrap.className = "article__meta";
+
+    var time = document.createElement("time");
+    time.setAttribute("datetime", p.date);
+    time.textContent = p.date;
+    wrap.appendChild(time);
+
     if (cfg.author) {
-      parts.push('<span class="dot">·</span>');
-      parts.push('<span>' + cfg.author + '</span>');
+      wrap.appendChild(makeDot());
+      var au = document.createElement("span");
+      au.textContent = cfg.author;
+      wrap.appendChild(au);
     }
+
+    if (p.category) {
+      wrap.appendChild(makeDot());
+      var cat = document.createElement("a");
+      cat.className = "meta-cat";
+      cat.href = "index.html?cat=" + encodeURIComponent(p.category);
+      cat.textContent = p.category;
+      wrap.appendChild(cat);
+    }
+
     (p.tags || []).forEach(function (t) {
-      parts.push('<span class="dot">·</span>');
-      parts.push('<span class="tag">' + t + '</span>');
+      wrap.appendChild(makeDot());
+      var tg = document.createElement("span");
+      tg.className = "tag";
+      tg.textContent = t;
+      wrap.appendChild(tg);
     });
-    return parts.join("");
+    return wrap;
+  }
+
+  function makeDot() {
+    var d = document.createElement("span");
+    d.className = "dot";
+    d.textContent = "·";
+    return d;
   }
 
   // 加载 Markdown 文件
@@ -52,7 +81,8 @@
   function renderPost(p) {
     document.title = p.title + " - " + (window.SITE_CONFIG.name || "博客");
     titleEl.textContent = p.title;
-    metaEl.innerHTML = fmtMeta(p);
+    metaEl.innerHTML = "";
+    metaEl.appendChild(fmtMeta(p));
     var file = p.file || ("posts/" + p.slug + ".md");
 
     fetchMd(file).then(function (md) {
@@ -69,22 +99,76 @@
     if (!navEl) return;
     var prev = POSTS[idx - 1];
     var next = POSTS[idx + 1];
-    var html = "";
+    navEl.innerHTML = "";
     if (prev) {
-      html += '<a class="post-nav__item" href="post.html?p=' + encodeURIComponent(prev.slug) + '">' +
-        '<div class="post-nav__label">上一篇</div>' +
-        '<div class="post-nav__title">' + prev.title + '</div></a>';
+      var a1 = document.createElement("a");
+      a1.className = "post-nav__item";
+      a1.href = "post.html?p=" + encodeURIComponent(prev.slug);
+      a1.appendChild(makeNav("上一篇", prev.title));
+      navEl.appendChild(a1);
     } else {
-      html += '<span></span>';
+      navEl.appendChild(document.createElement("span"));
     }
     if (next) {
-      html += '<a class="post-nav__item post-nav__item--next" href="post.html?p=' + encodeURIComponent(next.slug) + '">' +
-        '<div class="post-nav__label">下一篇</div>' +
-        '<div class="post-nav__title">' + next.title + '</div></a>';
+      var a2 = document.createElement("a");
+      a2.className = "post-nav__item post-nav__item--next";
+      a2.href = "post.html?p=" + encodeURIComponent(next.slug);
+      a2.appendChild(makeNav("下一篇", next.title));
+      navEl.appendChild(a2);
     } else {
-      html += '<span></span>';
+      navEl.appendChild(document.createElement("span"));
     }
-    navEl.innerHTML = html;
+  }
+
+  function makeNav(label, title) {
+    var frag = document.createDocumentFragment();
+    var lab = document.createElement("div");
+    lab.className = "post-nav__label";
+    lab.textContent = label;
+    var t = document.createElement("div");
+    t.className = "post-nav__title";
+    t.textContent = title;
+    frag.appendChild(lab);
+    frag.appendChild(t);
+    return frag;
+  }
+
+  // 同专栏前后篇导航（在通用前后篇之外，按 category 分组）
+  function renderSeriesNav(current) {
+    var navEl = document.getElementById("seriesNav");
+    if (!navEl || !current || !current.category) {
+      if (navEl) navEl.hidden = true;
+      return;
+    }
+    var same = POSTS.filter(function (p) { return p.category === current.category; });
+    if (same.length < 2) { navEl.hidden = true; return; }
+    same.sort(function (a, b) { return (a.date < b.date) ? 1 : (a.date > b.date) ? -1 : 0; });
+    var i = same.findIndex(function (p) { return p.slug === current.slug; });
+    var prev = same[i + 1];
+    var next = same[i - 1];
+    var titleEl = document.getElementById("seriesName");
+    if (titleEl) titleEl.textContent = current.category;
+    var wrap = document.getElementById("seriesNavItems");
+    wrap.innerHTML = "";
+    if (prev) {
+      var a = document.createElement("a");
+      a.className = "post-nav__item";
+      a.href = "post.html?p=" + encodeURIComponent(prev.slug);
+      a.appendChild(makeNav("同专栏 · 上一篇", prev.title));
+      wrap.appendChild(a);
+    } else {
+      wrap.appendChild(document.createElement("span"));
+    }
+    if (next) {
+      var b = document.createElement("a");
+      b.className = "post-nav__item post-nav__item--next";
+      b.href = "post.html?p=" + encodeURIComponent(next.slug);
+      b.appendChild(makeNav("同专栏 · 下一篇", next.title));
+      wrap.appendChild(b);
+    } else {
+      wrap.appendChild(document.createElement("span"));
+    }
+    navEl.hidden = false;
   }
 
   var slug = getSlug();
@@ -98,4 +182,5 @@
   }
   renderPost(POSTS[idx]);
   renderNav(idx);
+  renderSeriesNav(POSTS[idx]);
 })();

@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>写作 - 嵌入式笔记</title>
+  <meta name="description" content="在线 Markdown 编辑器：写作、实时预览、粘贴截图、保存草稿、发布到 GitHub。">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/style.css">
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('theme');
+        if (!t) t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {}
+    })();
+  </script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container site-header__inner">
+      <a class="site-title" href="index.html">
+        <img src="assets/favicon.svg" alt="" class="site-title__mark" width="20" height="20" aria-hidden="true">
+        <span>嵌入式笔记</span>
+      </a>
+      <nav class="nav" aria-label="主导航">
+        <a href="index.html" class="nav__link">文章</a>
+        <a href="about.html" class="nav__link">关于</a>
+        <a href="editor.html" class="nav__link is-active">写作</a>
+        <button class="theme-toggle" id="themeToggle" type="button" aria-label="切换深浅色主题" title="切换主题">
+          <svg class="theme-toggle__icon theme-toggle__icon--moon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>
+          <svg class="theme-toggle__icon theme-toggle__icon--sun" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M19.4 4.6l-1.8 1.8M6.4 17.6l-1.8 1.8"/></g></svg>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container main editor-main">
+    <div class="editor-topbar">
+      <a href="index.html" class="back-link">← 返回文章列表</a>
+      <div class="editor-topbar__right">
+        <span class="editor-status" id="editorStatus" aria-live="polite"></span>
+        <button type="button" class="editor-btn editor-btn--ghost" id="btnExport">导出 .md</button>
+        <button type="button" class="editor-btn editor-btn--ghost" id="btnSaveDraft">保存草稿</button>
+        <button type="button" class="editor-btn editor-btn--primary" id="btnPublish" disabled>发布</button>
+      </div>
+    </div>
+
+    <!-- 登录状态条（仅在线发布启用后显示） -->
+    <div class="editor-auth" id="authBar" hidden>
+      <span id="authUser" class="editor-auth__user"></span>
+      <a href="#" id="authLogin" class="editor-btn editor-btn--ghost">用 GitHub 登录</a>
+      <button type="button" id="authLogout" class="editor-btn editor-btn--ghost" hidden>退出</button>
+    </div>
+
+    <!-- 元数据表单 -->
+    <section class="editor-meta">
+      <div class="editor-field editor-field--grow">
+        <label for="fTitle">标题</label>
+        <input type="text" id="fTitle" maxlength="100" placeholder="文章标题">
+      </div>
+      <div class="editor-field">
+        <label for="fSlug">slug</label>
+        <input type="text" id="fSlug" maxlength="80" placeholder="url-friendly-slug" pattern="[a-z0-9-]*">
+      </div>
+      <div class="editor-field">
+        <label for="fDate">日期</label>
+        <input type="date" id="fDate">
+      </div>
+      <div class="editor-field">
+        <label for="fCategory">专栏</label>
+        <input type="text" id="fCategory" maxlength="30" placeholder="如 RTOS / STM32 外设">
+      </div>
+      <div class="editor-field editor-field--grow">
+        <label for="fTags">标签（逗号分隔）</label>
+        <input type="text" id="fTags" maxlength="120" placeholder="RTOS, 调试, FreeRTOS">
+      </div>
+      <div class="editor-field editor-field--grow">
+        <label for="fExcerpt">摘要</label>
+        <input type="text" id="fExcerpt" maxlength="200" placeholder="列表页的一句话摘要">
+      </div>
+    </section>
+
+    <!-- 草稿/历史切换 -->
+    <div class="editor-drafts" id="draftsBar">
+      <span class="editor-drafts__label">草稿：</span>
+      <select id="draftSelect" class="editor-select" aria-label="选择草稿"></select>
+      <button type="button" class="editor-btn editor-btn--ghost" id="btnNewDraft">新建</button>
+      <button type="button" class="editor-btn editor-btn--ghost" id="btnDelDraft">删除</button>
+    </div>
+
+    <!-- 编辑 + 预览 -->
+    <section class="editor-grid">
+      <div class="editor-pane editor-pane--input">
+        <div class="editor-pane__head">
+          <span>Markdown</span>
+          <small class="editor-pane__hint">支持粘贴截图（Ctrl/⌘+V）</small>
+        </div>
+        <textarea id="editorInput" class="editor-input" spellcheck="false" placeholder="# 标题&#10;&#10;在这里写正文。直接粘贴截图会自动插入图片。"></textarea>
+        <div class="editor-paste" id="pastePreview" hidden></div>
+      </div>
+      <div class="editor-pane editor-pane--preview">
+        <div class="editor-pane__head"><span>预览</span></div>
+        <article class="article__body prose editor-preview" id="editorPreview"></article>
+      </div>
+    </section>
+
+    <p class="editor-note" id="editorNote">
+      当前为本地编辑模式：草稿保存在浏览器 localStorage，刷新后可恢复。
+      <span id="publishNote" hidden>发布功能需配置后端 API（见 README 的「在线发布」一节）。</span>
+    </p>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container site-footer__inner">
+      <p>© <span id="year"></span> 嵌入式笔记</p>
+      <p class="site-footer__meta">由 Markdown 与原生 HTML / CSS / JS 构建</p>
+    </div>
+  </footer>
+
+  <script src="js/config.js"></script>
+  <script src="js/markdown.js"></script>
+  <script src="js/theme.js"></script>
+  <script src="js/main.js"></script>
+  <script src="js/editor.js"></script>
+</body>
+</html>
