@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+
+# Node / npx serve 临时产物
+node_modules/
+.served/
+
+# Python
+__pycache__/
+*.pyc
+
+# VS Code / IDE
+.vscode/
+.idea/
+
+# 系统缩略图
+Thumbs.db
+
+# Claude Code 本地工具与技能（开发期辅助，不属于博客站点本身）
+.claude/
+taste-skill/
