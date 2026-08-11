@@ -16,10 +16,9 @@ window.SITE_CONFIG = {
 
   // ---- 在线编辑/发布相关（公开配置，不含任何密钥）----
   // 发布后端 API 基础地址。留空表示尚未启用在线发布，
-  // 编辑器将只提供本地草稿和导出 Markdown 功能。
-  // 启用后填 Cloudflare Worker 的地址，例如 "https://blog-api.example.workers.dev"
-  // 本地联调时临时填 wrangler dev 的 "http://localhost:8787"；联调完上线前务必改回 "" 或正式 Worker 地址
-  apiBase: "",
+  // 编辑器将只显示「尚未配置发布服务」提示，不进入编辑界面。
+  // 填上 Worker 地址后启用作者 GitHub 登录、编辑与发布。
+  apiBase: "https://blog-api.zglstudylinux.workers.dev",
   // 允许调用 API 的来源（CORS / Origin 校验在服务端进行）
   siteOrigin: "https://zglstudylinux.github.io",
   // 仓库已提交图片的 raw 直链前缀（公开仓库，非密钥）。仅用于编辑器预览：
