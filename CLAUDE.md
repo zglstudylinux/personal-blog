@@ -2,79 +2,81 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## What this is
+## 这是什么
 
-A reading-first personal blog for an embedded developer. Pure static site: HTML + CSS + vanilla JS, zero dependencies, zero build step, zero bundler. Content is authored in Markdown and rendered client-side by a hand-rolled parser. Deploy target is GitHub Pages or EdgeOne Pages (static, no build command).
+一个面向嵌入式开发者的、阅读优先的个人博客。纯静态站点：HTML + CSS + 原生 JS，零依赖、零构建步骤、无打包器。内容用 Markdown 编写，由一个自研解析器在前端渲染。部署目标是 GitHub Pages 或 EdgeOne Pages（纯静态，无需构建命令）。
 
-## Serving locally (mandatory)
+**线上地址**：<https://zglstudylinux.github.io/personal-blog/>（GitHub Pages，`main` 分支根目录；每次推送 `main` 自动重新部署）
 
-Pages load Markdown via `fetch()`, so they **must** be opened through an HTTP server — opening `index.html` directly via `file://` silently fails (articles/about won't load, CORS blocks fetch on local files).
+## 本地预览（必须）
+
+页面通过 `fetch()` 加载 Markdown，所以**必须**通过 HTTP 服务器打开 —— 直接用 `file://` 打开 `index.html` 会静默失败（文章和关于页加载不出来，本地文件被 CORS 拦截）。
 
 ```powershell
-python -m http.server 8000   # then visit http://localhost:8000
-# or
+python -m http.server 8000   # 然后访问 http://localhost:8000
+# 或
 npx serve
 ```
 
-There is no build, lint, or test step. "Verifying a change" means: serve, then click through index → article → about in a browser.
+没有构建、lint 或测试步骤。"验证一处改动"的意思是：起服务，然后在浏览器里依次点开 首页 → 文章 → 关于。
 
-## Architecture
+## 架构
 
-### Three pages, each a distinct script combination
+### 三个页面，各自脚本组合不同
 
-- `index.html` — article list. Scripts: config → posts → markdown → theme → main → **list**
-- `post.html` — article detail. Scripts: config → posts → markdown → theme → main → **post**
-- `about.html` — about page. Scripts: config → markdown → theme → main → **about** (deliberately omits `posts.js` — the about page doesn't need the registry)
+- `index.html` —— 文章列表。脚本顺序：config → posts → markdown → theme → main → **list**
+- `post.html` —— 文章详情。脚本顺序：config → posts → markdown → theme → main → **post**
+- `about.html` —— 关于页。脚本顺序：config → markdown → theme → main → **about**（刻意省略 `posts.js` —— 关于页不需要注册表）
 
-Script load order is a real dependency chain, not cosmetic: `config.js` sets `window.SITE_CONFIG`, `posts.js` sets `window.POSTS`, `markdown.js` sets `window.SimpleMarkdown`; the page-specific script (list/post/about) consumes whichever of those it needs. Reordering or removing a script tag will break the page.
+脚本加载顺序是真实的依赖链，不是装饰：`config.js` 设置 `window.SITE_CONFIG`，`posts.js` 设置 `window.POSTS`，`markdown.js` 设置 `window.SimpleMarkdown`；页面专属脚本（list/post/about）消费它需要的那些。调换顺序或删掉某个 `<script>` 标签会让页面失效。
 
-### Content management: the registry, not frontmatter
+### 内容管理：靠注册表，不靠 frontmatter
 
-There is **no frontmatter and no file-walking**. `js/posts.js` is the single source of truth — a hand-maintained `window.POSTS` array. To add an article: drop a `.md` in `posts/`, then add an entry to `POSTS` with `slug` (matches filename), `title`, `date` (YYYY-MM-DD), `excerpt`, `tags`, and optional `file` (defaults to `posts/<slug>.md`). An unregistered `.md` file is invisible to the site.
+**没有 frontmatter，也不会自动扫描文件**。`js/posts.js` 是唯一的内容来源 —— 一个手工维护的 `window.POSTS` 数组。新增文章：把 `.md` 放进 `posts/`，然后往 `POSTS` 里加一条，字段包括 `slug`（和文件名一致）、`title`、`date`（YYYY-MM-DD）、`excerpt`、`tags`，以及可选的 `file`（默认 `posts/<slug>.md`）。没有登记的 `.md` 文件对站点不可见。
 
-The one exception is `posts/about.md` — it is fetched directly by `about.js` (fixed path `"posts/about.md"`), never goes through the `POSTS` registry.
+唯一例外是 `posts/about.md` —— 它由 `about.js` 直接按固定路径 `"posts/about.md"` 拉取，不走 `POSTS` 注册表。
 
-### Routing
+### 路由
 
-- Articles: `post.html?p=<slug>` — `post.js` reads `URLSearchParams`, finds the entry in `POSTS` by `slug`, fetches its markdown, renders into `#postBody`. Unknown slug → inline error. `prev/next` nav is computed from registry index.
-- About: static `about.html`, fetches fixed `posts/about.md`.
+- 文章：`post.html?p=<slug>` —— `post.js` 读 `URLSearchParams`，在 `POSTS` 里按 `slug` 查条目，拉取对应 markdown，渲染进 `#postBody`。未知 slug → 内联错误提示。上一篇/下一篇导航按注册表索引计算。
+- 关于：静态的 `about.html`，直接拉取固定路径 `posts/about.md`。
 
-### Markdown rendering (`js/markdown.js`)
+### Markdown 渲染（`js/markdown.js`）
 
-`window.SimpleMarkdown.render(md)` — a zero-dependency parser covering headings, paragraphs, bold/italic/strike, inline code, fenced code blocks, blockquotes, ordered/unordered lists, tables, hr, links, images. Input is HTML-escaped (XSS-safe).
+`window.SimpleMarkdown.render(md)` —— 一个零依赖解析器，覆盖标题、段落、加粗/斜体/删除线、行内代码、围栏代码块、引用、有序/无序列表、表格、分隔线、链接、图片。输入做 HTML 转义（防 XSS）。
 
-**Subtle invariant:** the `inline(s, codes)` helper extracts inline-code spans into a placeholder table (`" «index» "`), processes other formatting, then restores them. The `codes` array is passed **by parameter** through recursive calls (link text can itself contain inline code, e.g. `` `[`js/posts.js`](../js/posts.js) ``). Every recursive `inline()` call inside `inline()` must pass the same `codes` array — if a recursive call creates its own `codes`, outer placeholders are never restored and `render()` throws `Cannot read properties of undefined (reading 'replace')`. This was a real bug that broke the about page. Don't "simplify" `inline()` back to a local `codes`.
+**关键不变量：** `inline(s, codes)` 辅助函数先把行内代码提取成占位表（`" «index» "`），处理其它格式后再还原。`codes` 数组通过参数在递归调用间传递（链接文本里可能再嵌套行内代码，比如 `` `[`js/posts.js`](../js/posts.js) ``）。`inline()` 内部对 `inline()` 的每次递归调用都必须传同一份 `codes` —— 如果某次递归自己 new 了一份 `codes`，外层占位就再也还原不了，`render()` 会抛 `Cannot read properties of undefined (reading 'replace')`。这是一次真实出现过的 bug，把关于页搞挂过。不要把 `inline()` "简化"回使用局部 `codes`。
 
-### Theming (no FOUC)
+### 主题（无闪烁）
 
-Each HTML page has an inline `<head>` script that reads `localStorage.theme` (falling back to `prefers-color-scheme`) and sets `data-theme` on `<html>` **before paint**. `theme.js` only binds the toggle button and persists changes. All colors are CSS custom properties scoped under `[data-theme="dark"]` / `[data-theme="light"]` in `css/style.css`. `prefers-reduced-motion` is respected (disables smooth scroll / transitions).
+每个 HTML 页面 `<head>` 里有一段内联脚本，读取 `localStorage.theme`（回退到 `prefers-color-scheme`），在首次绘制前给 `<html>` 设 `data-theme`。`theme.js` 只负责绑定切换按钮和持久化用户选择。所有颜色都是 `css/style.css` 里以 `[data-theme="dark"]` / `[data-theme="light"]` 作用域的 CSS 自定义属性。`prefers-reduced-motion` 受到尊重（关闭平滑滚动和过渡）。
 
-## Design constraints (locked, do not drift)
+## 设计约束（锁定，不要漂移）
 
-These come from the `taste-skill` design directives the site was built under (in `.claude/skills/`, git-ignored). They are part of the site's identity, not arbitrary preferences:
+这些来自构建本站时遵循的 `taste-skill` 设计指令（在 `.claude/skills/` 下，已 git 忽略）。它们是站点身份的一部分，不是随意的偏好：
 
-- **Single accent color, locked across the whole site.** Dark `#6cb6ff`, light `#0b6bcb` — a cold blue chosen deliberately *against* the AI-purple default. Don't introduce a second accent (no teal badges, no green status chips). Edit `--accent` in `css/style.css` to change it site-wide.
-- **Shape consistency lock:** one corner-radius scale (`--radius` / `--radius-sm`). Don't mix pill buttons with sharp cards.
-- **Reading-first editorial tone** — technical feel comes from typography and restraint, not effects. Em-dashes are banned in copy; use them sparingly or not at all. Keep motion minimal.
-- Fonts: sans stack (`--font-sans`) for UI/body, mono (`--font-mono`) for code. Serif is available (`--font-serif`) but not used by default — don't reach for it.
+- **单一强调色，全站锁定。** 深色 `#6cb6ff`，浅色 `#0b6bcb` —— 一个冷青蓝，刻意选来对抗 AI 紫的默认套路。不要引入第二个强调色（不要青色徽章、不要绿色状态点）。要改色就改 `css/style.css` 里的 `--accent`，全站联动。
+- **形状一致性锁定：** 一套圆角尺度（`--radius` / `--radius-sm`）。不要把胶囊按钮和直角卡片混用。
+- **阅读优先的编辑风** —— 技术感来自排版和克制，不是特效。正文中禁止使用 em-dash（破折号），尽量少用甚至不用。动效保持最小。
+- 字体：UI 和正文用 sans 栈（`--font-sans`），代码用 mono（`--font-mono`）。serif（`--font-serif`）可用但默认不用 —— 不要主动伸手。
 
-## Paths and deployment
+## 路径与部署
 
-All asset paths in HTML are relative to site root (`css/...`, `js/...`, `posts/...`, `assets/...`). Note: `posts/about.md` contains `../`-prefixed links (e.g. `[css/style.css](../css/style.css)`) which resolve relative to `about.html` at root — they work at root deployment. If deploying under a subpath on GitHub Pages, these and the `?p=` links may need adjusting (no `<base>` tag is currently used).
+HTML 里所有资源路径都相对于站点根（`css/...`、`js/...`、`posts/...`、`assets/...`）。注意：`posts/about.md` 里有 `../` 前缀的链接（如 `[css/style.css](../css/style.css)`），是相对于根目录下的 `about.html` 解析的 —— 在根目录部署时正确。若部署在 GitHub Pages 的子路径下，这些链接和 `?p=` 链接可能需要调整（目前没有用 `<base>` 标签）。
 
-GitHub Pages: Settings → Pages → Source = `Deploy from a branch`, branch `main`, folder `/` (root). No `.nojekyll` needed (no underscore files). EdgeOne Pages: build command empty, output dir `.`.
+GitHub Pages：Settings → Pages → Source = `Deploy from a branch`，分支 `main`，目录 `/`（根）。不需要 `.nojekyll`（没有下划线开头的文件）。EdgeOne Pages：构建命令留空，输出目录 `.`。
 
-## Git / remote
+## Git / 远程
 
-- Remote: `git@github.com:zglstudylinux/personal-blog.git` (branch `main`, tracks `origin/main`).
-- `.gitignore` excludes `.claude/` (local skill/tool files) and `taste-skill/` (the cloned skill repo with its own `.git` — a nested repo that must not be committed). `node_modules/`, IDE files, OS thumbnails also ignored.
-- The repo was initialized onto an existing remote that already had an `Initial commit` (MIT LICENSE, author `zgl_Embedded`). Local history is linear: `0e33d67 Initial commit → <blog commit>`. That LICENSE is preserved — don't overwrite or remove it.
-- Line endings: files are LF in the repo; git warns about LF→CRLF on Windows checkout (harmless, `core.autocrlf` default behavior).
+- 远程：`git@github.com:zglstudylinux/personal-blog.git`（分支 `main`，跟踪 `origin/main`）。
+- `.gitignore` 忽略 `.claude/`（本地技能/工具文件）和 `taste-skill/`（当初 clone 的技能仓库，自带 `.git` —— 一个嵌套仓库，绝不能提交）。`node_modules/`、IDE 文件、系统缩略图同样忽略。
+- 本仓库是在一个已有远程上初始化的，远端当时已有一个 `Initial commit`（MIT LICENSE，作者 `zgl_Embedded`）。本地历史是线性的：`0e33d67 Initial commit → <博客提交>`。那份 LICENSE 保留了 —— 不要覆盖或删除。
+- 行尾：仓库里是 LF，Windows checkout 时 git 会警告 LF→CRLF（无害，是 `core.autocrlf` 默认行为）。
 
-## Editing checklist
+## 改动清单
 
-- Changing site name/description/author/default theme → `js/config.js`.
-- Adding/removing/reordering articles → `js/posts.js` (and the `.md` file in `posts/`).
-- About page content → `posts/about.md`.
-- Colors, spacing, fonts, components → CSS variables at the top of `css/style.css`; one accent, locked.
-- After any JS/markdown change: serve via HTTP and click all three pages (list, an article, about) before considering it done — `file://` will hide regressions.
+- 改站点名 / 副标题 / 作者 / 默认主题 → `js/config.js`。
+- 增删或重排文章 → `js/posts.js`（外加 `posts/` 里的 `.md` 文件）。
+- 关于页内容 → `posts/about.md`。
+- 颜色、间距、字体、组件 → `css/style.css` 顶部的 CSS 变量；单一强调色，锁定。
+- 改了任何 JS 或 markdown 之后：用 HTTP 起服务，依次点开三个页面（列表、一篇文章、关于）才算完成 —— `file://` 会掩盖回归。

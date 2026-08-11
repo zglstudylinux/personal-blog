@@ -3,6 +3,8 @@
 一个面向嵌入式开发者的纯静态个人博客：文章列表、文章详情、关于页。
 纯 HTML + CSS + JavaScript，零依赖、零构建步骤，内容用 Markdown 管理，可部署到 GitHub Pages 或 EdgeOne Pages。
 
+**线上地址**：<https://zglstudylinux.github.io/personal-blog/>（GitHub Pages，`main` 分支根目录自动部署）
+
 ## 特性
 
 - **纯静态**：HTML + CSS + 原生 JS，没有框架、没有构建步骤，复制文件即用。
@@ -90,6 +92,8 @@ npx serve
 1. 在 GitHub 建一个仓库，把整个 `blog/` 目录推上去。
 2. 仓库 Settings → Pages → Source 选 `Deploy from a branch`，分支选 `main`，目录选 `/`（根）或你放站点的子目录。
 3. 保存后等一两分钟，GitHub 会给你一个 `https://<用户名>.github.io/<仓库名>/` 的网址。
+
+> 本仓库已部署到 GitHub Pages，地址见顶部。配置：Source = `Deploy from a branch`，分支 `main`，目录 `/`（根）。每次推送到 `main` 会自动触发重新部署。
 
 > 如果你的站点在仓库的子目录（比如仓库根有别的文件，博客在 `blog/`），GitHub Pages 的 Source 要选那个子目录，或者在仓库根放一个 `.nojekyll` 文件避免下划线开头的文件被忽略（本站没用到这类文件，影响不大）。
 
