@@ -1,7 +1,11 @@
 /* ============================================================
    lib/publish.js - 发布流程
-   在独立分支上同时提交 Markdown 正文与 js/posts.js 注册表更新，
-   然后创建 Pull Request。不直接写 main。
+   作者登录后由 Worker 直接写 main 分支：
+     - create：Markdown 不存在 → 提交正文 + 追加 js/posts.js 条目
+     - update：Markdown 已存在 → 用 SHA 更新正文 + 替换同 slug 的注册表条目
+   不再创建发布分支和 PR。合并 PR 的审阅环节由作者白名单 + 服务端校验取代。
+   两次 GitHub Contents API 调用无法组成一次原子提交，采用「先正文后注册表」
+   的顺序：第二步失败时返回 partial，不伪称成功，也不暴露 token/堆栈。
    ============================================================ */
 
 import { ghApi, getSha } from "./github.js";
@@ -43,85 +47,149 @@ function appendToRegistry(src, entry) {
   return pre + inner + (needComma ? "," : "") + "\n" + entry + "\n" + post;
 }
 
-export async function publishPost(env, post, branch, user) {
+// 在 js/posts.js 里找到指定 slug 的顶层对象块，替换为新条目文本。
+// 用花括号深度切分顶层对象（处理字符串里的花括号与转义），不做 JS 解析。
+// 注册表顶部的大注释在 "window.POSTS = [" 之前，不在切分范围内。
+function updateRegistryEntry(src, newEntryText, slug) {
+  const start = src.indexOf("window.POSTS = [");
+  if (start === -1) throw new Error("registry: window.POSTS = [ not found");
+  const arrOpen = src.indexOf("[", start);
+  if (arrOpen === -1) throw new Error("registry: array open not found");
+  const close = src.lastIndexOf("];");
+  if (close === -1 || close < arrOpen) throw new Error("registry: array close not found");
+  const inner = src.slice(arrOpen + 1, close);
+  const range = findEntryRange(inner, slug);
+  if (!range) throw new Error("registry: entry not found for slug " + slug);
+  const newInner = inner.slice(0, range.start) + newEntryText + inner.slice(range.end);
+  const pre = src.slice(0, arrOpen + 1);
+  const post = src.slice(close);
+  return pre + newInner + post;
+}
+
+// 在数组内容里定位属于某 slug 的顶层 {...} 块的 [start, end) 字符区间。
+function findEntryRange(inner, slug) {
+  let depth = 0;
+  let start = -1;
+  let inStr = false;
+  let strCh = "";
+  let esc = false;
+  for (let i = 0; i < inner.length; i++) {
+    const ch = inner[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === strCh) inStr = false;
+      continue;
+    }
+    if (ch === '"' || ch === "'") { inStr = true; strCh = ch; continue; }
+    if (ch === "{") {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (ch === "}") {
+      depth--;
+      if (depth === 0 && start >= 0) {
+        const block = inner.slice(start, i + 1);
+        const m = block.match(/slug\s*:\s*["']([^"']+)["']/);
+        if (m && m[1] === slug) return { start: start, end: i + 1 };
+        start = -1;
+      }
+    }
+  }
+  return null;
+}
+
+function commitMsg(prefix, slug, user) {
+  return prefix + ": " + slug + " by @" + (user && user.login ? user.login : "unknown");
+}
+
+function encodeContent(text) {
+  return btoa(unescape(encodeURIComponent(text)));
+}
+
+// mode: "create" | "update"
+export async function publishPost(env, post, mode, user) {
+  const branch = DEFAULT_BRANCH;
   const mdPath = "posts/" + post.slug + ".md";
   const registryPath = "js/posts.js";
 
-  // 1. 取 main 最新 commit SHA 作为发布分支起点
-  const refRes = await ghApi(env, "GET", "/git/ref/heads/" + DEFAULT_BRANCH);
-  if (!refRes.ok) return { ok: false, error: "cannot read main ref", conflict: false };
-  const baseSha = refRes.data.object.sha;
+  if (mode === "update") {
+    // 更新已有文章：Markdown 必须已存在
+    const existMd = await getSha(env, branch, mdPath);
+    if (!existMd.exists) {
+      return { ok: false, error: "文章不存在，无法更新：" + post.slug, conflict: false };
+    }
+    // 1. 用 SHA 更新 Markdown 正文
+    const putMd = await ghApi(env, "PUT", "/contents/" + mdPath, {
+      message: commitMsg("update", post.slug, user) + " (content)",
+      branch: branch,
+      sha: existMd.sha,
+      content: encodeContent(post.content)
+    });
+    if (!putMd.ok) {
+      if (putMd.status === 409) return { ok: false, error: "正文与远程冲突，请重新载入后再发布", conflict: true };
+      return { ok: false, error: "cannot update markdown (" + putMd.status + ")", conflict: false };
+    }
+    // 2. 替换注册表同 slug 条目
+    const reg = await getSha(env, branch, registryPath);
+    if (!reg.exists) {
+      return { ok: false, error: "正文已更新，但注册表 js/posts.js 在远程不存在，需手动补条目", partial: true };
+    }
+    let newSrc;
+    try {
+      newSrc = updateRegistryEntry(decodeBase64(reg.content), buildPostEntry(post), post.slug);
+    } catch (e) {
+      return { ok: false, error: "registry update failed: " + e.message, partial: true };
+    }
+    const putReg = await ghApi(env, "PUT", "/contents/" + registryPath, {
+      message: commitMsg("update", post.slug, user) + " (registry)",
+      branch: branch,
+      sha: reg.sha,
+      content: encodeContent(newSrc)
+    });
+    if (!putReg.ok) {
+      if (putReg.status === 409) return { ok: false, error: "注册表与远程冲突，请重新载入后再发布（正文已更新）", conflict: true, partial: true };
+      return { ok: false, error: "正文已更新，但注册表更新失败 (" + putReg.status + ")", partial: true };
+    }
+    return { ok: true, mode: "update", slug: post.slug };
+  }
 
-  // 2. 冲突检测：文章文件若已存在则拒绝（要求 slug 唯一）
-  const existMd = await getSha(env, DEFAULT_BRANCH, mdPath);
+  // create 模式：Markdown 必须不存在
+  const existMd = await getSha(env, branch, mdPath);
   if (existMd.exists) {
-    return { ok: false, error: "slug already exists: " + post.slug, conflict: true };
+    return { ok: false, error: "slug 已存在：" + post.slug, conflict: true };
   }
-
-  // 3. 创建发布分支
-  const brRes = await ghApi(env, "POST", "/git/refs", {
-    ref: "refs/heads/" + branch,
-    sha: baseSha
-  });
-  if (!brRes.ok) {
-    // 422/422 可能是引用已存在
-    if (brRes.status !== 422) return { ok: false, error: "cannot create branch", conflict: false };
-  }
-
-  // 4. 提交 Markdown 正文
-  const mdContent = btoa(unescape(encodeURIComponent(post.content)));
+  // 1. 提交 Markdown 正文
   const putMd = await ghApi(env, "PUT", "/contents/" + mdPath, {
-    message: "publish: " + post.slug + " (content)",
+    message: commitMsg("publish", post.slug, user) + " (content)",
     branch: branch,
-    content: mdContent
+    content: encodeContent(post.content)
   });
-  if (!putMd.ok) return { ok: false, error: "cannot commit markdown", conflict: false };
-
-  // 5. 读当前 js/posts.js，追加注册表条目，提交
+  if (!putMd.ok) {
+    if (putMd.status === 409) return { ok: false, error: "正文与远程冲突，请重新载入后再发布", conflict: true };
+    return { ok: false, error: "cannot commit markdown (" + putMd.status + ")", conflict: false };
+  }
+  // 2. 追加注册表条目
   const reg = await getSha(env, branch, registryPath);
-  const currentSrc = reg.exists ? decodeBase64(reg.content) : "";
+  if (!reg.exists) {
+    return { ok: false, error: "Markdown 已提交，但注册表 js/posts.js 在远程不存在，需手动补条目", partial: true };
+  }
   let newSrc;
   try {
-    newSrc = appendToRegistry(currentSrc, buildPostEntry(post));
+    newSrc = appendToRegistry(decodeBase64(reg.content), buildPostEntry(post));
   } catch (e) {
-    return { ok: false, error: "registry update failed: " + e.message, conflict: false };
+    return { ok: false, error: "registry update failed: " + e.message, partial: true };
   }
   const putReg = await ghApi(env, "PUT", "/contents/" + registryPath, {
-    message: "publish: " + post.slug + " (registry)",
+    message: commitMsg("publish", post.slug, user) + " (registry)",
     branch: branch,
-    sha: reg.exists ? reg.sha : undefined,
-    content: btoa(unescape(encodeURIComponent(newSrc)))
+    sha: reg.sha,
+    content: encodeContent(newSrc)
   });
-  if (!putReg.ok) return { ok: false, error: "cannot commit registry", conflict: false };
-
-  // 6. 创建 PR
-  const pr = await ghApi(env, "POST", "/pulls", {
-    title: post.title,
-    head: branch,
-    base: DEFAULT_BRANCH,
-    body: buildPrBody(post, user)
-  });
-  if (!pr.ok) return { ok: false, error: "cannot create pr", conflict: false };
-
-  return {
-    ok: true,
-    prUrl: pr.data && pr.data.html_url,
-    branch: branch
-  };
-}
-
-function buildPrBody(p, user) {
-  return [
-    "## " + (p.title || ""),
-    "",
-    "- slug: `" + p.slug + "`",
-    "- date: `" + p.date + "`",
-    p.category ? "- 专栏: " + p.category : "",
-    p.tags && p.tags.length ? "- 标签: " + p.tags.join(", ") : "",
-    "- 作者: @" + (user && user.login ? user.login : ""),
-    "",
-    "> 由网页编辑器发布。合并后 GitHub Pages 会自动部署，注意有缓存延迟。"
-  ].filter(Boolean).join("\n");
+  if (!putReg.ok) {
+    if (putReg.status === 409) return { ok: false, error: "注册表与远程冲突，请重新载入后再发布（正文已提交，建议手动补注册表条目）", conflict: true, partial: true };
+    return { ok: false, error: "Markdown 已提交，但注册表更新失败 (" + putReg.status + ")", partial: true };
+  }
+  return { ok: true, mode: "create", slug: post.slug };
 }
 
 function decodeBase64(b64) {

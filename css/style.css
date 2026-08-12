@@ -660,6 +660,63 @@ hr {
 /* ---------- 12. 编辑器 ---------- */
 .editor-main { max-width: var(--container-w); }
 
+/* 认证门禁：未登录时只显示登录卡片，不暴露编辑工作区 */
+.editor-gate {
+  display: flex;
+  justify-content: center;
+  padding: 3.5rem 1rem 2rem;
+}
+.editor-gate[hidden] { display: none; }
+#editorWorkspace[hidden] { display: none; }
+.editor-gate__card {
+  max-width: 460px;
+  width: 100%;
+  padding: 2.1rem 1.8rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  background: var(--bg-soft);
+  text-align: center;
+}
+.editor-gate__title {
+  margin: 0 0 0.6rem;
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+.editor-gate__desc {
+  margin: 0 0 1.4rem;
+  color: var(--text-soft);
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+.editor-gate__desc a { color: var(--accent); }
+.editor-gate__actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+}
+.editor-gate__hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.82rem;
+  color: #e5484d;
+  font-family: var(--font-mono);
+}
+.editor-gate__hint[hidden],
+.editor-gate__noservice[hidden] { display: none; }
+.editor-gate__noservice {
+  margin: 0.9rem 0 0;
+  font-size: 0.82rem;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  line-height: 1.7;
+  text-align: left;
+}
+.editor-gate__noservice code { font-family: var(--font-mono); }
+
 .editor-topbar {
   display: flex;
   flex-wrap: wrap;
@@ -762,6 +819,7 @@ hr {
   font-size: 0.85rem;
 }
 .editor-drafts__label { color: var(--text-faint); font-family: var(--font-mono); }
+.editor-drafts__sep { color: var(--border); padding: 0 0.2rem; }
 .editor-select { flex: 0 1 280px; }
 
 .editor-grid {

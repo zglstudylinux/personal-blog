@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>写作 - 嵌入式笔记</title>
-  <meta name="description" content="在线 Markdown 编辑器：写作、实时预览、粘贴截图、保存草稿、发布到 GitHub。">
+  <meta name="description" content="在线 Markdown 编辑器：写作、实时预览、粘贴截图、保存草稿、发布到 GitHub。仅作者本人登录后可用。">
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="css/style.css">
   <script>
@@ -37,79 +37,100 @@
   </header>
 
   <main class="container main editor-main">
-    <div class="editor-topbar">
-      <a href="index.html" class="back-link">← 返回文章列表</a>
-      <div class="editor-topbar__right">
-        <span class="editor-status" id="editorStatus" aria-live="polite"></span>
-        <button type="button" class="editor-btn editor-btn--ghost" id="btnExport">导出 .md</button>
-        <button type="button" class="editor-btn editor-btn--ghost" id="btnSaveDraft">保存草稿</button>
-        <button type="button" class="editor-btn editor-btn--primary" id="btnPublish" disabled>发布</button>
-      </div>
-    </div>
 
-    <!-- 登录状态条（仅在线发布启用后显示） -->
-    <div class="editor-auth" id="authBar" hidden>
-      <span id="authUser" class="editor-auth__user"></span>
-      <a href="#" id="authLogin" class="editor-btn editor-btn--ghost">用 GitHub 登录</a>
-      <button type="button" id="authLogout" class="editor-btn editor-btn--ghost" hidden>退出</button>
-    </div>
-
-    <!-- 元数据表单 -->
-    <section class="editor-meta">
-      <div class="editor-field editor-field--grow">
-        <label for="fTitle">标题</label>
-        <input type="text" id="fTitle" maxlength="100" placeholder="文章标题">
-      </div>
-      <div class="editor-field">
-        <label for="fSlug">slug</label>
-        <input type="text" id="fSlug" maxlength="80" placeholder="url-friendly-slug" pattern="[a-z0-9-]*">
-      </div>
-      <div class="editor-field">
-        <label for="fDate">日期</label>
-        <input type="date" id="fDate">
-      </div>
-      <div class="editor-field">
-        <label for="fCategory">专栏</label>
-        <input type="text" id="fCategory" maxlength="30" placeholder="如 RTOS / STM32 外设">
-      </div>
-      <div class="editor-field editor-field--grow">
-        <label for="fTags">标签（逗号分隔）</label>
-        <input type="text" id="fTags" maxlength="120" placeholder="RTOS, 调试, FreeRTOS">
-      </div>
-      <div class="editor-field editor-field--grow">
-        <label for="fExcerpt">摘要</label>
-        <input type="text" id="fExcerpt" maxlength="200" placeholder="列表页的一句话摘要">
-      </div>
-    </section>
-
-    <!-- 草稿/历史切换 -->
-    <div class="editor-drafts" id="draftsBar">
-      <span class="editor-drafts__label">草稿：</span>
-      <select id="draftSelect" class="editor-select" aria-label="选择草稿"></select>
-      <button type="button" class="editor-btn editor-btn--ghost" id="btnNewDraft">新建</button>
-      <button type="button" class="editor-btn editor-btn--ghost" id="btnDelDraft">删除</button>
-    </div>
-
-    <!-- 编辑 + 预览 -->
-    <section class="editor-grid">
-      <div class="editor-pane editor-pane--input">
-        <div class="editor-pane__head">
-          <span>Markdown</span>
-          <small class="editor-pane__hint">支持粘贴截图（Ctrl/⌘+V）</small>
+    <!-- 认证门禁：未登录时只显示这一块 -->
+    <section class="editor-gate" id="authGate">
+      <div class="editor-gate__card">
+        <h1 class="editor-gate__title">写作入口</h1>
+        <p class="editor-gate__desc">仅作者本人可编辑与发布文章。访客请到<a href="index.html">文章列表</a>阅读。</p>
+        <div class="editor-gate__actions">
+          <span id="gateStatus" class="editor-status" aria-live="polite"></span>
+          <a href="#" id="authLogin" class="editor-btn editor-btn--primary">用 GitHub 登录</a>
         </div>
-        <textarea id="editorInput" class="editor-input" spellcheck="false" placeholder="# 标题&#10;&#10;在这里写正文。直接粘贴截图会自动插入图片。"></textarea>
-        <div class="editor-paste" id="pastePreview" hidden></div>
-      </div>
-      <div class="editor-pane editor-pane--preview">
-        <div class="editor-pane__head"><span>预览</span></div>
-        <article class="article__body prose editor-preview" id="editorPreview"></article>
+        <p class="editor-gate__hint" id="gateHint" hidden></p>
+        <p class="editor-gate__noservice" id="noServiceHint" hidden>尚未配置发布服务。部署 Cloudflare Worker 后，在 <code>js/config.js</code> 填入 <code>apiBase</code> 即可启用。</p>
       </div>
     </section>
 
-    <p class="editor-note" id="editorNote">
-      当前为本地编辑模式：草稿保存在浏览器 localStorage，刷新后可恢复。
-      <span id="publishNote" hidden>发布功能需配置后端 API（见 README 的「在线发布」一节）。</span>
-    </p>
+    <!-- 工作区：登录后才显示 -->
+    <div id="editorWorkspace" hidden>
+      <div class="editor-topbar">
+        <a href="index.html" class="back-link">← 返回文章列表</a>
+        <div class="editor-topbar__right">
+          <span class="editor-status" id="editorStatus" aria-live="polite"></span>
+          <button type="button" class="editor-btn editor-btn--ghost" id="btnExport">导出 .md</button>
+          <button type="button" class="editor-btn editor-btn--ghost" id="btnSaveDraft">保存草稿</button>
+          <button type="button" class="editor-btn editor-btn--primary" id="btnPublish" disabled>发布</button>
+        </div>
+      </div>
+
+      <!-- 登录状态条 -->
+      <div class="editor-auth" id="authBar">
+        <span id="authUser" class="editor-auth__user"></span>
+        <button type="button" id="authLogout" class="editor-btn editor-btn--ghost">退出</button>
+      </div>
+
+      <!-- 元数据表单 -->
+      <section class="editor-meta">
+        <div class="editor-field editor-field--grow">
+          <label for="fTitle">标题</label>
+          <input type="text" id="fTitle" maxlength="100" placeholder="文章标题">
+        </div>
+        <div class="editor-field">
+          <label for="fSlug">slug</label>
+          <input type="text" id="fSlug" maxlength="80" placeholder="url-friendly-slug" pattern="[a-z0-9-]*">
+        </div>
+        <div class="editor-field">
+          <label for="fDate">日期</label>
+          <input type="date" id="fDate">
+        </div>
+        <div class="editor-field">
+          <label for="fCategory">专栏</label>
+          <input type="text" id="fCategory" maxlength="30" placeholder="如 RTOS / STM32 外设">
+        </div>
+        <div class="editor-field editor-field--grow">
+          <label for="fTags">标签（逗号分隔）</label>
+          <input type="text" id="fTags" maxlength="120" placeholder="RTOS, 调试, FreeRTOS">
+        </div>
+        <div class="editor-field editor-field--grow">
+          <label for="fExcerpt">摘要</label>
+          <input type="text" id="fExcerpt" maxlength="200" placeholder="列表页的一句话摘要">
+        </div>
+      </section>
+
+      <!-- 草稿/历史切换 -->
+      <div class="editor-drafts" id="draftsBar">
+        <span class="editor-drafts__label">草稿：</span>
+        <select id="draftSelect" class="editor-select" aria-label="选择草稿"></select>
+        <button type="button" class="editor-btn editor-btn--ghost" id="btnNewDraft">新建草稿</button>
+        <button type="button" class="editor-btn editor-btn--ghost" id="btnDelDraft">删除草稿</button>
+        <span class="editor-drafts__sep" aria-hidden="true">|</span>
+        <span class="editor-drafts__label">已发布：</span>
+        <select id="publishedSelect" class="editor-select" aria-label="选择已发布文章进行编辑"></select>
+        <button type="button" class="editor-btn editor-btn--ghost" id="btnLoadPublished">载入编辑</button>
+      </div>
+
+      <!-- 编辑 + 预览 -->
+      <section class="editor-grid">
+        <div class="editor-pane editor-pane--input">
+          <div class="editor-pane__head">
+            <span>Markdown</span>
+            <small class="editor-pane__hint">支持粘贴截图（Ctrl/⌘+V）</small>
+          </div>
+          <textarea id="editorInput" class="editor-input" spellcheck="false" placeholder="# 标题&#10;&#10;在这里写正文。直接粘贴截图会自动插入图片。"></textarea>
+          <div class="editor-paste" id="pastePreview" hidden></div>
+        </div>
+        <div class="editor-pane editor-pane--preview">
+          <div class="editor-pane__head"><span>预览</span></div>
+          <article class="article__body prose editor-preview" id="editorPreview"></article>
+        </div>
+      </section>
+
+      <p class="editor-note" id="editorNote">
+        登录后可直接发布到 <code>main</code> 分支，GitHub Pages 会自动部署，注意有缓存延迟。
+      </p>
+    </div>
+
   </main>
 
   <footer class="site-footer">
@@ -120,6 +141,7 @@
   </footer>
 
   <script src="js/config.js"></script>
+  <script src="js/posts.js"></script>
   <script src="js/markdown.js"></script>
   <script src="js/theme.js"></script>
   <script src="js/main.js"></script>

@@ -9,7 +9,7 @@
 
 - **纯静态**：HTML + CSS + 原生 JS，没有框架、没有构建步骤，复制文件即用。
 - **Markdown 内容管理**：文章放在 `posts/` 目录，在 `js/posts.js` 登记后自动出现在列表。
-- **网页写作**：内置 Markdown 编辑器（`editor.html`），实时预览、草稿、粘贴截图、专栏与标签、在线发布。
+- **网页写作**：内置 Markdown 编辑器（`editor.html`），作者登录后实时预览、草稿、粘贴截图、专栏与标签、新建/编辑已发布文章、直接发布到 `main`。访客只看到登录入口，不能编辑。
 - **专栏**：每篇文章一个主专栏（`category`）+ 多个标签（`tags`），首页可按专栏筛选，文章页有同专栏前后篇导航。
 - **深浅色主题**：跟随系统偏好，可手动切换，选择保存在 localStorage。
 - **响应式**：桌面 / 平板 / 手机自适应，遵守 `prefers-reduced-motion`。
@@ -34,7 +34,7 @@ blog/
 │   ├── list.js             # 首页列表渲染 + 搜索 + 标签筛选 + 专栏筛选
 │   ├── post.js             # 详情页：加载并渲染 Markdown、专栏导航
 │   ├── about.js            # 关于页：加载 about.md
-│   └── editor.js           # 编辑器：预览/草稿/粘贴/导出/登录/发布
+│   └── editor.js           # 编辑器：认证门禁/预览/草稿/粘贴/导出/登录/发布（create+update）
 ├── posts/
 │   ├── rtos-priority-inversion.md
 │   ├── adc-sampling-stm32.md
@@ -92,7 +92,7 @@ npx serve
 
 ## 修改站点信息
 
-改 [`js/config.js`](js/config.js)：站点名、副标题、作者、默认主题。`apiBase` 留空时编辑器只提供本地草稿和导出；填上 Worker 地址后启用在线登录与发布。
+改 [`js/config.js`](js/config.js)：站点名、副标题、作者、默认主题。`apiBase` 留空时编辑器显示「尚未配置发布服务」提示，不进入编辑界面；填上 Worker 地址后启用作者 GitHub 登录、编辑与发布。
 
 ## 修改样式
 
@@ -101,17 +101,11 @@ npx serve
 
 ## 在线写作与发布
 
-除了手工写 `.md` + 改 `posts.js`，也可以用网页编辑器完成整个流程。
+除了手工写 `.md` + 改 `posts.js`，也可以用网页编辑器完成整个流程。编辑器是**作者专用**的：默认只显示 GitHub 登录入口和「仅作者本人可编辑和发布」提示，登录成功后才显示编辑工作区。访客打开博客首页 / 文章页 / 关于页始终只有阅读体验，看不到编辑入口。
 
-### 本地模式（开箱即用，无需后端）
+### 尚未配置后端（`apiBase` 为空）
 
-打开 `editor.html`：
-
-- 实时预览（复用文章详情页的 Markdown 解析器）。
-- 标题 / slug / 日期 / 专栏 / 标签 / 摘要 元数据编辑。
-- 草稿保存在浏览器 localStorage，刷新可恢复，支持多草稿。
-- 粘贴截图（Ctrl/⌘+V）插入图片。本地模式下图片是 `blob:` 预览，只在本机可见。
-- 导出 `.md` 文件，手工放进 `posts/` 并登记到 `posts.js`。
+打开 `editor.html` 只会看到「尚未配置发布服务」提示，不进入编辑界面。部署下面的 `api/` 后端并填好 `apiBase` 后，才能登录与发布。
 
 ### 在线发布（需部署 `api/` 后端）
 
@@ -119,9 +113,12 @@ npx serve
 
 1. 按 [`api/README.md`](api/README.md) 创建 Worker、OAuth App，并设置 Secret。
 2. 把 Worker 地址填进 [`js/config.js`](js/config.js) 的 `apiBase`。
-3. 在编辑器里用 GitHub 登录（只允许白名单内的 GitHub user id 发布）。
+3. 在编辑器登录页用 GitHub 登录（只允许白名单内的 GitHub user id 登录，非白名单会被服务端拒绝）。
 4. 粘贴的截图会提交到仓库的 `assets/images/`，Markdown 里保存的是站点根相对路径，随 GitHub Pages 一起部署。
-5. 点「发布」后，Worker 会在 `publish/<slug>-<时间戳>` 分支同时提交 Markdown 正文和 `js/posts.js` 注册表，并创建 Pull Request。合并 PR 后 GitHub Pages 自动部署。
+5. 点「发布」后，Worker 在 `main` 分支同时提交 Markdown 正文和 `js/posts.js` 注册表条目，**直接写入 `main`，不再创建 PR**。GitHub Pages 自动部署，注意有缓存延迟。
+6. 已发布文章可在编辑器的「已发布」下拉里选择并「载入编辑」，修改后再点发布即更新线上（`mode: update`）。也可以用 `editor.html?edit=<slug>` 直接打开某篇已发布文章编辑。
+
+> 前端隐藏工作区只是体验，不是安全边界：Worker 的每个写接口（登录回调、图片上传、发布）都会校验会话与作者白名单，未登录或非作者无法绕过。
 
 > 预览与正文路径的拆分：编辑器正文里存的是仓库相对路径 `assets/images/...`（发布到线上后正确），但本地工作副本里没有 Worker 刚提交的图，static server 会 404。编辑器预览会把 `<img src="assets/images/...">` 临时改写成 `raw.githubusercontent.com/.../main` 直链显示，只影响预览 DOM、不改正文，发布内容仍是正确的仓库相对路径。
 
@@ -131,7 +128,10 @@ npx serve
 - 前端只持 HttpOnly 会话 cookie，永远拿不到 PAT。
 - 服务端重新校验 slug / 日期 / 标题 / 专栏 / 标签 / Markdown，不信任浏览器校验结果。
 - 拒绝 `javascript:` / `vbscript:` / 危险 `data:` 协议，禁止原始 HTML 注入。
-- 发布前检测 slug 冲突，分支名由服务端生成，不接受客户端传的任意路径。
+- 只写固定路径 `posts/<slug>.md` 与 `js/posts.js`，分支固定为 `main`，不接受客户端传的任意路径或分支。
+- 发布前检测 slug 冲突（新建时 slug 已存在 → 409；更新时远程 SHA 冲突 → 409 提示重新载入）。
+
+> 直接写 `main` 的代价与回滚：相比「发布为 PR 再合并」，少了人工审阅这一步，发布即上线。回滚方式是在仓库里对 `posts/<slug>.md` 或 `js/posts.js` 做 `git revert`，或用 GitHub Pages 的历史部署。生产环境务必保持 `GH_API_TOKEN` 权限最小（只授权目标仓库的 `contents:write`），并定期轮换。
 
 ## 部署到 GitHub Pages
 

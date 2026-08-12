@@ -27,6 +27,9 @@ compatibility_date = "2024-05-01"
 [vars]
 # 这里只能放非机密配置。CORS 白名单等可放这里。
 SITE_ORIGIN = "https://zglstudylinux.github.io"
+# 静态站部署在 GitHub Pages 的子路径 /personal-blog/ 下。Origin 比对只用上面的
+# origin（CORS 信任 origin，不带路径），OAuth 回调后跳回编辑器时要补上这个子路径。
+SITE_PATH = "/personal-blog"
 LOCAL_ORIGIN = "http://localhost:8000"
 # 图片上传限制（服务端校验，与前端一致）
 IMAGE_MAX_BYTES = "5242880"

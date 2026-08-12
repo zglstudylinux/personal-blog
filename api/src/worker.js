@@ -6,7 +6,9 @@
      - 会话：自签 JWT 放在 HttpOnly + Secure + SameSite=Lax cookie
      - 作者白名单（GitHub 数字 user id）
      - 图片上传：提交到 Git 仓库 assets/images/，Markdown 保存站点根相对路径
-     - 发布：服务端校验 → 在发布分支提交 Markdown + 注册表 → 创建 PR
+     - 发布：服务端校验 → 作者登录后直接写 main 分支（create / update）
+       两次 Contents API 调用按「先正文后注册表」顺序，第二步失败返回 partial，
+       不伪称成功。不再创建 PR。
    安全铁律（不可违反）：
      - 所有 GitHub 凭据（GH_CLIENT_SECRET / GH_API_TOKEN）只来自 Secret，
        绝不出现在响应、日志或前端可读代码中。
@@ -114,11 +116,16 @@ async function sessionUser(request, env) {
 
 function setSessionCookie(token, secure) {
   const maxAge = SESSION_TTL;
-  return `${SESSION_COOKIE}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}` + (secure ? "; Secure" : "");
+  // 静态站(github.io)与 Worker(workers.dev)跨站：编辑器用跨站 fetch 读 /api/auth/me，
+  // 必须用 SameSite=None;Secure 才能带 cookie；SameSite=Lax 在跨站 fetch 下不会被发送。
+  // 本地 dev 全在 localhost（同站），用 Lax 即可，且 http 下 None 无 Secure 会被浏览器拒绝。
+  const sameSite = secure ? "None" : "Lax";
+  return `${SESSION_COOKIE}=${token}; HttpOnly; SameSite=${sameSite}; Path=/; Max-Age=${maxAge}` + (secure ? "; Secure" : "");
 }
 
 function clearSessionCookie(secure) {
-  return `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0` + (secure ? "; Secure" : "");
+  const sameSite = secure ? "None" : "Lax";
+  return `${SESSION_COOKIE}=; HttpOnly; SameSite=${sameSite}; Path=/; Max-Age=0` + (secure ? "; Secure" : "");
 }
 
 // 本地 wrangler dev 跑在 http://localhost:8787，浏览器不会存带 Secure 的 cookie，
@@ -154,11 +161,14 @@ function handleLogin(request, env) {
   authUrl.searchParams.set("scope", "read:user");
   authUrl.searchParams.set("state", state);
   const sec = isSecure(request);
+  // 与 session cookie 同步：跨站场景(生产)用 SameSite=None;Secure，
+  // 否则 GitHub OAuth 跳转回来时浏览器不会把 state cookie 带回 Worker。
+  const sameSite = sec ? "None" : "Lax";
   return new Response(null, {
     status: 302,
     headers: {
       Location: authUrl.toString(),
-      "Set-Cookie": `blog_oauth_state=${state}; HttpOnly; SameSite=Lax; Path=/; Max-Age=600` + (sec ? "; Secure" : ""),
+      "Set-Cookie": `blog_oauth_state=${state}; HttpOnly; SameSite=${sameSite}; Path=/; Max-Age=600` + (sec ? "; Secure" : ""),
       "Cache-Control": "no-store"
     }
   });
@@ -214,10 +224,15 @@ async function handleCallback(request, env, url) {
   const siteOrigin = isLocal
     ? (env.LOCAL_ORIGIN || env.SITE_ORIGIN)
     : (env.SITE_ORIGIN || "https://zglstudylinux.github.io");
+  // 生产静态站部署在 GitHub Pages 子路径 /personal-blog/ 下，回调后必须跳回
+  // 带子路径的编辑器，否则会落到 https://zglstudylinux.github.io/editor.html → GitHub 404。
+  // 本地 dev 直接在站点根目录服务，无子路径。SITE_ORIGIN 只放 origin（用于 CORS），
+  // 子路径单独放 SITE_PATH，避免污染 Origin 白名单比对。
+  const sitePath = isLocal ? "" : (env.SITE_PATH || "");
   return new Response(null, {
     status: 302,
     headers: {
-      Location: siteOrigin + "/editor.html",
+      Location: siteOrigin + sitePath + "/editor.html",
       "Set-Cookie": setSessionCookie(jwt, isSecure(request)),
       "Cache-Control": "no-store"
     }
@@ -290,6 +305,8 @@ async function handleValidate(request, env) {
 // ============================================================
 // POST /api/posts/publish
 // body: { slug, title, date, excerpt, category, tags[], content, mode }
+//   mode: "create" 新建（slug 必须不存在） / "update" 更新已有文章
+// 作者登录后由 Worker 直接写 main 分支，不再创建 PR。
 // ============================================================
 async function handlePublish(request, env) {
   const u = await sessionUser(request, env);
@@ -305,9 +322,8 @@ async function handlePublish(request, env) {
   const v = validatePost(body);
   if (!v.ok) return json({ ok: false, errors: v.errors }, 422);
 
-  // 发布分支名只来自 slug + 时间戳，不接受客户端传的分支名
-  const ts = Math.floor(Date.now() / 1000).toString(36);
-  const branch = "publish/" + body.slug + "-" + ts;
+  // mode 只接受 create / update，默认 create；服务端最终以远程文件是否存在为准
+  const mode = body.mode === "update" ? "update" : "create";
 
   const result = await publishPost(env, {
     slug: body.slug,
@@ -317,9 +333,19 @@ async function handlePublish(request, env) {
     category: body.category || "",
     tags: Array.isArray(body.tags) ? body.tags : [],
     content: body.content
-  }, branch, u);
+  }, mode, u);
 
-  return json(result, result.ok ? 200 : (result.conflict ? 409 : 502));
+  if (result.ok) {
+    return json({
+      ok: true,
+      mode: result.mode,
+      slug: result.slug,
+      message: "已直接发布到 main，GitHub Pages 会自动部署，注意有缓存延迟。"
+    });
+  }
+  // 冲突 → 409；部分更新（正文已写、注册表未写）→ 500 但带 partial 标记
+  const status = result.conflict ? 409 : (result.partial ? 500 : 502);
+  return json({ ok: false, error: result.error, partial: !!result.partial, conflict: !!result.conflict }, status);
 }
 
 // ============================================================
