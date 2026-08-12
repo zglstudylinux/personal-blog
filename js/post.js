@@ -88,6 +88,15 @@
     fetchMd(file).then(function (md) {
       bodyEl.classList.remove("is-error");
       bodyEl.innerHTML = window.SimpleMarkdown.render(md);
+      // 渲染后增强：Mermaid 图表 + 代码语法高亮。
+      // 单块 Mermaid 渲染失败已在 BlogEnhance 内部降级为源码展示，不会抛到这层；
+      // 这里再加一层 try/catch 兜底，确保即使 enhance 整体抛错也不会把「正文已加载成功」
+      // 误报成「找不到文章」。
+      try {
+        if (window.BlogEnhance) window.BlogEnhance.enhance(bodyEl);
+      } catch (enhErr) {
+        console.warn("enhance 失败（正文已加载，保留原文）:", enhErr);
+      }
       // 跳转后定位到页顶
       window.scrollTo(0, 0);
     }).catch(function () {

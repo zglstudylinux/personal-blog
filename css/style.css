@@ -471,6 +471,68 @@ hr {
   white-space: pre;
 }
 
+/* highlight.js 语法高亮：让 hljs 主题 CSS 接管 <pre><code> 的配色。
+   hljs 主题自带 pre code.hljs 的 padding 与 background，会覆盖上面的 pre 背景，
+   但代码块外框（圆角、边框）仍由本文件控制。hljs 的 padding 与上面 .article__body pre
+   的 1.1rem/1.3rem 不一致，这里统一回填，避免高亮后代码块内边距跳变。 */
+.article__body pre code.hljs,
+.prose pre code.hljs,
+.editor-preview pre code.hljs {
+  padding: 0;
+  background: none;
+  font-size: 0.86rem;
+}
+.editor-preview pre {
+  margin: 1.6rem 0;
+  padding: 1.1rem 1.3rem;
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+  border-radius: var(--radius);
+  overflow-x: auto;
+  line-height: 1.6;
+}
+.editor-preview pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 0.86rem;
+  color: var(--text);
+  white-space: pre;
+}
+
+/* Mermaid 图表容器：替换掉原来的 <pre><code>。
+   .is-mermaid-pending 是渲染中状态，.is-mermaid-fallback 是渲染失败、保留源码。 */
+.mermaid-container {
+  margin: 1.6rem 0;
+  padding: 1.1rem 1.3rem;
+  background: var(--bg-soft);
+  border: 1px solid var(--code-border);
+  border-radius: var(--radius);
+  overflow-x: auto;
+  text-align: center;
+}
+.mermaid-container svg {
+  max-width: 100%;
+  height: auto;
+  display: inline-block;
+}
+.article__body pre.is-mermaid-fallback,
+.prose pre.is-mermaid-fallback,
+.editor-preview pre.is-mermaid-fallback {
+  border-color: var(--accent);
+  position: relative;
+}
+.article__body pre.is-mermaid-fallback::before,
+.prose pre.is-mermaid-fallback::before,
+.editor-preview pre.is-mermaid-fallback::before {
+  content: "Mermaid 渲染失败，显示源码";
+  display: block;
+  margin-bottom: 0.5rem;
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  color: var(--text-soft);
+}
+
 /* 表格 */
 .article__body table {
   width: 100%;

@@ -33,6 +33,9 @@
       var next = cur === "dark" ? "light" : "dark";
       applyTheme(next);
       setStored(next);
+      // 通知增强模块（Mermaid 重渲染 + highlight.js 主题 CSS 切换）。
+      // 事件在 applyTheme 之后派发，订阅者读到的是新主题。
+      document.dispatchEvent(new CustomEvent("blog:themechange"));
     });
   }
 

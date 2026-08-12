@@ -173,6 +173,9 @@
 
   // ---------- 实时预览 ----------
   var renderTimer = null;
+  // 预览代际号：每次重渲染前自增，传给 BlogEnhance；异步 Mermaid 回调比对
+  // preview._blogGen，不等则说明期间又渲染了一轮，旧回调作废，避免旧 SVG 落到新 DOM。
+  var previewGen = 0;
   function renderPreview() {
     if (renderTimer) clearTimeout(renderTimer);
     renderTimer = setTimeout(function () {
@@ -184,6 +187,16 @@
         // 没有 Worker 刚提交的图片，static server 会 404；改写成 raw.githubusercontent.com
         // 直链即可在预览里看到。这只改预览 DOM 的 src，不改正文 textarea，不影响发布内容。
         preview.innerHTML = rebaseImgSrc(html);
+        // 渲染后增强：Mermaid 图表 + 代码高亮。用代际号防异步竞态
+        // （preview.innerHTML 整体替换后，上一轮还在跑的 Mermaid 异步回调不能再写回这个容器）。
+        // 单块 Mermaid 渲染失败已在 BlogEnhance 内部降级为源码展示，不会抛到这层；
+        // 这里再加一层 try/catch 兜底，确保即使 enhance 整体抛错也不会清掉预览、
+        // 误报成「预览渲染出错」（那是 SimpleMarkdown.render 的错误语义，不是增强层的）。
+        try {
+          if (window.BlogEnhance) window.BlogEnhance.enhance(preview, ++previewGen);
+        } catch (enhErr) {
+          console.warn("enhance 失败（预览正文已渲染，保留原文）:", enhErr);
+        }
       } catch (e) {
         preview.innerHTML = '<p class="editor-preview__err">预览渲染出错：' +
           window.SimpleMarkdown.escapeHtml(String(e.message)) + "</p>";

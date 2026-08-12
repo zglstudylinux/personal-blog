@@ -16,6 +16,14 @@
     .then(function (md) {
       try {
         body.innerHTML = window.SimpleMarkdown.render(md);
+        // 渲染后增强：Mermaid 图表 + 代码语法高亮。
+        // 单块 Mermaid 渲染失败已在 BlogEnhance 内部降级为源码展示，不会抛到这层；
+        // 这里再加一层 try/catch 兜底，确保即使 enhance 整体抛错也不会把 about 正文清掉。
+        try {
+          if (window.BlogEnhance) window.BlogEnhance.enhance(body);
+        } catch (enhErr) {
+          console.warn("enhance 失败（about 正文已加载，保留原文）:", enhErr);
+        }
       } catch (e) {
         throw e; // 渲染抛错也走 catch，给出更明确的提示
       }
