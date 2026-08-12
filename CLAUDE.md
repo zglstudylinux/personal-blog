@@ -22,14 +22,16 @@ npx serve
 
 ## 架构
 
-### 三个页面，各自脚本组合不同
+### 四个页面，各自脚本组合不同
 
-- `index.html` —— 文章列表。脚本顺序：config → posts → markdown → theme → main → **list**
-- `post.html` —— 文章详情。脚本顺序：config → posts → markdown → theme → main → **post**
-- `about.html` —— 关于页。脚本顺序：config → markdown → theme → main → **about**（刻意省略 `posts.js` —— 关于页不需要注册表）
-- `editor.html` —— 网页写作。脚本顺序：config → markdown → theme → main → **editor**（省略 `posts.js` —— 编辑器不读注册表）
+- `index.html` —— 文章列表。脚本顺序：config → posts → markdown → theme → main → **list**（不加载 vendor 与增强模块 —— 首页没有正文容器，无东西可增强）
+- `post.html` —— 文章详情。脚本顺序：config → posts → markdown → **highlight → mermaid** → theme → main → **diagram-highlight** → **post**
+- `about.html` —— 关于页。脚本顺序：config → markdown → **highlight → mermaid** → theme → main → **diagram-highlight** → **about**（刻意省略 `posts.js` —— 关于页不需要注册表）
+- `editor.html` —— 网页写作。脚本顺序：config → posts → markdown → **highlight → mermaid** → theme → main → **diagram-highlight** → **editor**
 
-脚本加载顺序是真实的依赖链，不是装饰：`config.js` 设置 `window.SITE_CONFIG`，`posts.js` 设置 `window.POSTS`，`markdown.js` 设置 `window.SimpleMarkdown`；页面专属脚本（list/post/about/editor）消费它需要的那些。调换顺序或删掉某个 `<script>` 标签会让页面失效。
+脚本加载顺序是真实的依赖链，不是装饰：`config.js` 设置 `window.SITE_CONFIG`，`posts.js` 设置 `window.POSTS`，`markdown.js` 设置 `window.SimpleMarkdown`，`vendor/highlight/highlight.min.js` 设置 `window.hljs`，`vendor/mermaid/mermaid.min.js` 设置 `window.mermaid`；`diagram-highlight.js` 设置 `window.BlogEnhance` 并在 `ensureInit()` 里监听 `blog:themechange`（必须晚于 `theme.js` 加载，否则绑不到事件源——实际上它用 document 级事件且 `ensureInit` 在首次 `enhance()` 时才跑，顺序容错较强，但仍按约定放 `theme.js` 之后）；页面专属脚本（list/post/about/editor）消费它需要的那些。调换顺序或删掉某个 `<script>` 标签会让页面失效或退化为无增强的纯文本代码块。
+
+`<head>` 里还有两个 highlight.js 主题 CSS `<link data-hljs-theme="dark|light">`：默认启用浅色那张、禁用深色那张（`disabled` 属性），由 `diagram-highlight.js` 的 `applyHljsTheme()` 按 `data-theme` 切换 `disabled`。两张都加载、只启用一张，切主题零闪烁、零网络往返。
 
 ### 内容管理：靠注册表，不靠 frontmatter
 
@@ -48,9 +50,39 @@ npx serve
 
 ### Markdown 渲染（`js/markdown.js`）
 
-`window.SimpleMarkdown.render(md)` —— 一个零依赖解析器，覆盖标题、段落、加粗/斜体/删除线、行内代码、围栏代码块、引用、有序/无序列表、表格、分隔线、链接、图片。输入做 HTML 转义（防 XSS），图片/链接走 `safeUrl()` 协议白名单（拒绝 `javascript:` / `vbscript:` / `file:`，`data:` 仅限安全图片类型），危险 URL 退化为纯文本/转义文本而非真实链接或 `<img>`。
+`window.SimpleMarkdown.render(md)` —— 一个零依赖解析器，覆盖标题、段落、加粗/斜体/删除线、行内代码、围栏代码块、引用、有序/无序列表、表格、分隔线、链接、图片。输入做 HTML 转义（防 XSS），图片/链接走 `safeUrl()` 协议白名单（拒绝 `javascript:` / `vbscript:` / `file:`，`data:` 仅限安全图片类型），危险 URL 退化为纯文本/转义文本而非真实链接或 `<img>`。围栏代码块输出 `<pre><code class="language-<lang>">…</code></pre>`，内容已 `escapeHtml`；围栏正则是 `/^```(\w*)\s*$/`，注意 `\w*` 不匹配 `c++` / `objective-c` 这类带非单词字符的语言名，未知语言名安全地保留为普通代码块。
 
 **关键不变量：** `inline(s, codes)` 辅助函数先把行内代码提取成占位表（`" «index» "`），处理其它格式后再还原。`codes` 数组通过参数在递归调用间传递（链接文本里可能再嵌套行内代码，比如 `` `[`js/posts.js`](../js/posts.js) ``）。`inline()` 内部对 `inline()` 的每次递归调用都必须传同一份 `codes` —— 如果某次递归自己 new 了一份 `codes`，外层占位就再也还原不了，`render()` 会抛 `Cannot read properties of undefined (reading 'replace')`。这是一次真实出现过的 bug，把关于页搞挂过。不要把 `inline()` "简化"回使用局部 `codes`。
+
+### 渲染后增强：Mermaid 图表 + 代码高亮（`js/diagram-highlight.js`）
+
+`SimpleMarkdown.render()` 保持同步且安全，**不**在它内部做 Mermaid / highlight.js。增强是「渲染后」的独立一层：页面脚本把 `render()` 返回的安全 HTML 字符串塞进容器 `innerHTML`，再调 `window.BlogEnhance.enhance(container, gen)` 扫描已挂载的节点：
+
+- `pre > code.language-mermaid` → 用 `window.mermaid.render(id, code, function(svg, bindFunctions){...})` 渲染成 SVG，在回调里把 `svg` 包进 `<div class="mermaid-container">` 插到 `<pre>` 前，原 `<pre>` `display:none` 保留（作降级源）。源码取 `codeEl.textContent`（DOM 把 `escapeHtml` 的实体解码回原始文本，**不走 innerHTML**）。
+- `pre code[class*="language-"]`（非 mermaid）→ `window.hljs.highlightElement(codeEl)`。
+- 两处都已 `data-mmd-rendered` / `data-hl-done` 去重，避免重复增强。
+
+**Mermaid 9.4.3 API 不变量（不可违反，否则「没报错也没图表」）：** 本站自托管的是 Mermaid **9.4.3**，其 `mermaid.render` 是**同步回调式** API，签名 `render(id, code, cb, container?)`：`cb(svg, bindFunctions)` 在 `render()` 调用期间**同步**触发，`render()` 的返回值是 svg **字符串**（不是 Promise）。9.4.3 源码里甚至有一行守卫 `if("then"in Z) throw new Error("Diagram is a promise. Use renderAsync.")`——它主动拒绝 Promise 语义。
+
+**绝不能**按 Mermaid 10+ 的 Promise 链来写：`var ret = mermaid.render(id, code); if (ret && typeof ret.then === "function") { ret.then(...).catch(...) }`。在 9.4.3 里 `ret` 是字符串，`typeof ret.then === "function"` **恒为 false**，整个 `.then` 块（插 SVG 那段）永远不执行——SVG 被 mermaid 算出来后**直接丢弃，既不插入也不报错**。这正是本次修过的一个真实 bug：升级或重构 `diagram-highlight.js` 时，**不要**「简化」回调式写法为 Promise 链，也不要去用 `renderAsync`（那是 9.4.3 才有的异步包装，签名又不一样，徒增复杂度）。认准 `render(id, code, cb)` 这一种。
+
+9.4.3 的词法/解析错误是**同步抛出**（不是 reject），所以 `enhanceMermaid` 和 `onThemeChange` 都用 `try/catch` 包住 `mermaid.render(...)`，捕获后降级为 `.is-mermaid-fallback`（首渲）或保留旧 SVG（切主题时），不中断后续块、不上抛。
+
+**降级铁律：** `window.mermaid` 或 `window.hljs` 缺失（vendor 没加载）→ 对应分支直接 return，保留 `SimpleMarkdown` 原本输出的可读 `<pre><code>`。单块 Mermaid 渲染抛错 → 给 `<pre>` 加 `.is-mermaid-fallback` 类（CSS 用 `::before` 显示「Mermaid 渲染失败，显示源码」），不替换内容。单块高亮抛错 → catch 吞掉保留原样。**不要把增强写成「库不在就崩页」** —— 读者应永远能看到代码/图表源码。
+
+**安全：** Mermaid 用 `securityLevel: "strict"`（禁用 HTML 注入与 click 回调里的代码执行）；`mermaid.render(id, code, cb)` 的 `code` 来自 `textContent`，不是 `innerHTML`。`hljs.highlightElement` 读 `textContent` 生成转义 token。二者都不引入新的未转义 HTML，与 `SimpleMarkdown` 的转义契约一致。`cb` 的第二参 `bindFunctions` 是 Mermaid 交互节点绑定，在 strict 模式下安全，回调里 `bindFunctions(wrap)` 调用即可。
+
+**Mermaid 9.4.3 标签转义规则（写文章时易踩）：** 9.4.3 的词法器对节点/边标签里的部分字符会**同步抛 Lexical error**，导致该块降级为源码。含 `#` `:` `=` `<` `>` `;` `（` `）`、全角 `：`、箭头 `→`、斜杠 `/` 等的标签，**必须用双引号包裹**：`X["#if foo"]`、`X["sys_cb.mic_alg_en = 1"]`、`X["Mix PACC：PCM0 + PCM1 → 节点链"]`。纯字母数字/中文/空格的标签可不加引号。这些块在 Typora（Mermaid 10+）里能显示，不等于在本站能显示——9.4.3 的词法器更严。作者粘图块回退时，多半是哪个标签漏了引号。
+
+**主题切换（`blog:themechange`）：** `theme.js` 在 `applyTheme(next)` 之后 `document.dispatchEvent(new CustomEvent("blog:themechange"))`。`diagram-highlight.js` 的 `onThemeChange()` 收到后：(1) `applyHljsTheme()` 按当前 `data-theme` 启用对应 `link[data-hljs-theme]`、禁用另一张（零网络往返）；(2) 若 Mermaid 主题名变了（dark↔default），`mermaid.initialize` 重设主题，遍历 `registry` 里仍挂载的条目用回调式 `mermaid.render(id, code, cb)` 重渲染，在 `cb` 里把新 SVG 写回 `r.wrap.innerHTML`。`registry` 在重渲染前先过滤掉 `pre` 已脱离 DOM 的失效条目。切主题的重渲染同样用 `try/catch` 包 `mermaid.render`，同步抛错则保留旧 SVG。改主题切换逻辑时记住写回前再判一次 `r.wrap.parentNode`。
+
+**异步竞态（generation token）：** `enhance(container, gen)` 把 `container._blogGen = gen` 记在容器上；`stale(container, gen, pre)` 在每个回调写 DOM 前比对 `container._blogGen === gen` 且 `pre` 仍在容器内，不等则作废。**编辑器实时预览必须传 `++previewGen`**：`renderPreview()` 120ms debounce 后整体替换 `preview.innerHTML` 再 `enhance(preview, ++previewGen)`，上一轮还在跑的回调比对到 gen 不等就 return，避免旧 SVG 落到新 DOM。post/about 页不传 gen（gen=0 时 `stale` 跳过代际检查，只看 `pre` 是否仍在 DOM），因为它们一次性渲染、不会整体替换容器。改预览逻辑时不要丢掉这个代际号，否则快速输入时会出现图表错位/闪烁。
+
+> 9.4.3 的 `cb` 本身是同步触发的，竞态风险不如 Mermaid 10+ 的 Promise 回调高；但 `renderPreview` 的整体替换 + 下一轮 `enhance` 之间仍有微小窗口，代际号是廉价保险，保留不删。
+
+**vendor 自托管（固定版本，无 CDN 运行时依赖）：** `vendor/mermaid/`（Mermaid 9.4.3，`mermaid.min.js` + `.map` + LICENSE + package.json）、`vendor/highlight/`（highlight.js 11.9.0 预构建浏览器包 `highlight.min.js`，暴露 `window.hljs`，含约 37 种常用语言；`styles/github-dark.min.css` + `styles/github.min.css` 两张主题；LICENSE + package.json）。升级版本时同步改 `vendor/*/package.json`、重新下载 min 文件、保留 LICENSE，并在 README/CLAUDE.md 标注新版本。**不要改用 CDN** —— 站点定位是零外部运行时依赖的纯静态站。
+
+`index.html` 故意不加载 vendor 与 `diagram-highlight.js`：首页只渲染列表卡片，没有正文容器需要增强；加载它们只会增重。
 
 ### 主题（无闪烁）
 
@@ -74,7 +106,7 @@ GitHub Pages：Settings → Pages → Source = `Deploy from a branch`，分支 `
 ## Git / 远程
 
 - 远程：`git@github.com:zglstudylinux/personal-blog.git`（分支 `main`，跟踪 `origin/main`）。
-- `.gitignore` 忽略 `.claude/`（本地技能/工具文件）和 `taste-skill/`（当初 clone 的技能仓库，自带 `.git` —— 一个嵌套仓库，绝不能提交）。`node_modules/`、IDE 文件、系统缩略图同样忽略。
+- `.gitignore` 忽略 `.claude/`（本地技能/工具文件）和 `taste-skill/`（当初 clone 的技能仓库，自带 `.git` —— 一个嵌套仓库，绝不能提交）。`node_modules/`、IDE 文件、系统缩略图同样忽略。`vendor/` **不忽略** —— Mermaid / highlight.js 的 min 文件、map、LICENSE、package.json 都要提交，这是「自托管、无 CDN 运行时依赖」的代价，也是站点离线可用的前提。
 - 本仓库是在一个已有远程上初始化的，远端当时已有一个 `Initial commit`（MIT LICENSE，作者 `zgl_Embedded`）。本地历史是线性的：`0e33d67 Initial commit → <博客提交>`。那份 LICENSE 保留了 —— 不要覆盖或删除。
 - 行尾：仓库里是 LF，Windows checkout 时 git 会警告 LF→CRLF（无害，是 `core.autocrlf` 默认行为）。
 
@@ -84,7 +116,7 @@ GitHub Pages：Settings → Pages → Source = `Deploy from a branch`，分支 `
 - 增删或重排文章 → `js/posts.js`（外加 `posts/` 里的 `.md` 文件）。每条带 `category`（主专栏）和 `tags`（数组）。
 - 关于页内容 → `posts/about.md`。
 - 颜色、间距、字体、组件 → `css/style.css` 顶部的 CSS 变量；单一强调色，锁定。
-- 改了任何 JS 或 markdown 之后：用 HTTP 起服务，依次点开 首页 → 一篇文章 → 关于 → 编辑器 才算完成 —— `file://` 会掩盖回归。
+- 改了任何 JS 或 markdown 之后：用 HTTP 起服务，依次点开 首页 → 一篇文章 → 关于 → 编辑器 才算完成 —— `file://` 会掩盖回归。验证文章页 / 关于页 / 编辑器预览时，至少各点一个 ` ```mermaid ` 块和一个 ` ```js `（或 ` ```c `）块，确认 Mermaid 出 SVG、代码块上色；再切一次主题，确认 Mermaid 按新主题重渲染、highlight.js 主题 CSS 切换。
 
 ## 编辑器与在线发布后端（`api/`）
 

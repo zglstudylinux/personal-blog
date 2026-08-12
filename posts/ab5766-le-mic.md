@@ -46,11 +46,11 @@
 ```mermaid
 flowchart TD
     A[config.h 选择产品] --> B[config_ab5766_le_mic.h 编译期开关]
-    C[Output/bin/xcfg.xm] --> D[xmaker 生成 xcfg.bin / xcfg.h]
-    D --> E[bsp_sys_init: xcfg_init]
-    E --> F[xcfg_cb 角色、MIC、RF、DAC 等运行时值]
-    B --> G[#if 选择音频代码]
-    F --> H[角色与设备参数]
+    C["Output/bin/xcfg.xm"] --> D["xmaker 生成 xcfg.bin / xcfg.h"]
+    D --> E["bsp_sys_init: xcfg_init"]
+    E --> F["xcfg_cb 角色、MIC、RF、DAC 等运行时值"]
+    B --> G["#if 选择音频代码"]
+    F --> H["角色与设备参数"]
     G --> I[最终镜像]
     H --> I
 ```
@@ -75,9 +75,9 @@ flowchart TD
     D --> E{wireless_role_is_adapter}
     E -->|否| F[mic_emit_init]
     E -->|是| G[adapter_init]
-    F --> H[sys_cb.mic_alg_en = 1]
+    F --> H["sys_cb.mic_alg_en = 1"]
     G --> H
-    I[最后一条连接断开] --> J[sys_cb.mic_alg_en = 0]
+    I[最后一条连接断开] --> J["sys_cb.mic_alg_en = 0"]
     J --> K[mic_emit_reset 或 adapter_reset]
 ```
 
@@ -91,14 +91,14 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    A[无线 TX 前回调<br/>wireless_d2a_adc_dma_cb] --> B[mic_enc_adc_dma_kick]
+    A["无线 TX 前回调 wireless_d2a_adc_dma_cb"] --> B[mic_enc_adc_dma_kick]
     B --> C{sys_cb.mic_alg_en}
     C -->|是| D[bsp_sdadc_kick]
-    D --> E[SDADC DMA 半满/全满回调]
+    D --> E["SDADC DMA 半满/全满回调"]
     E --> F[mic_enc_proc_cb PCM]
-    F --> G[启动丢帧 / mute 清零]
+    F --> G["启动丢帧 / mute 清零"]
     G --> H[Local PACC 输入前 Soft Gain]
-    H --> I[Local PACC：已重链接节点链]
+    H --> I["Local PACC：已重链接节点链"]
     I --> J[lc3s_enc]
     J --> K[wireless_d2a_put_tx_frame]
     F --> L[发射端 DAC 监听]
@@ -140,9 +140,9 @@ flowchart LR
 flowchart LR
     A[BLE 接收包] --> B[wireless_d2a_set_rxpkt_cb]
     B --> C[wireless_d2a_set_rxdec_cb]
-    C --> D[rxpkt_done / kick_dec_prio_trans]
+    C --> D["rxpkt_done / kick_dec_prio_trans"]
     D --> E[thread_dec_proc_msg_cb]
-    E --> F[MSG_MIC_DEC0 / MSG_MIC_DEC1]
+    E --> F["MSG_MIC_DEC0 / MSG_MIC_DEC1"]
     F --> G[mic_dec_prco_cb idx]
     G --> H[wireless_d2a_get_rx_frame]
     H --> I{BFI?}
@@ -151,9 +151,9 @@ flowchart LR
     J --> L[plc_soft_process]
     K --> L
     L --> M[mic_dec_pcm_out]
-    M --> N[Mix PACC：PCM0 + PCM1 → 已重链接节点链]
+    M --> N["Mix PACC：PCM0 + PCM1 → 已重链接节点链"]
     N --> O[DAC]
-    N --> P[完整 120 samples 后 USB Mic]
+    N --> P["完整 120 samples 后 USB Mic"]
 ```
 
 | 次序          | 可见函数与位置                                               | 事实                                                         |
@@ -245,7 +245,7 @@ flowchart LR
     B --> C[EVT_ONLINE_SET_EFFECT]
     C --> D[func_message]
     D --> E[toolkit_process]
-    E --> F[CRC / 名称校验]
+    E --> F["CRC / 名称校验"]
     F --> G[effect_update_callback_tbl]
 ```
 

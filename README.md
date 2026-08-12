@@ -12,6 +12,7 @@
 - **网页写作**：内置 Markdown 编辑器（`editor.html`），作者登录后实时预览、草稿、粘贴截图、专栏与标签、新建/编辑已发布文章、直接发布到 `main`。访客只看到登录入口，不能编辑。
 - **专栏**：每篇文章一个主专栏（`category`）+ 多个标签（`tags`），首页可按专栏筛选，文章页有同专栏前后篇导航。
 - **深浅色主题**：跟随系统偏好，可手动切换，选择保存在 localStorage。
+- **Mermaid 图表 + 代码高亮**：` ```mermaid ` 围栏块在前端渲染成 SVG 图表，` ```js ` / ` ```c ` 等代码块自动语法高亮。库自托管（`vendor/`，固定版本，无 CDN 运行时依赖），库加载或单块渲染失败时优雅降级为原始可读代码。
 - **响应式**：桌面 / 平板 / 手机自适应，遵守 `prefers-reduced-motion`。
 - **可部署**：GitHub Pages 或 EdgeOne Pages，纯静态无需后端。
 
@@ -34,7 +35,11 @@ blog/
 │   ├── list.js             # 首页列表渲染 + 搜索 + 标签筛选 + 专栏筛选
 │   ├── post.js             # 详情页：加载并渲染 Markdown、专栏导航
 │   ├── about.js            # 关于页：加载 about.md
-│   └── editor.js           # 编辑器：认证门禁/预览/草稿/粘贴/导出/登录/发布（create+update）
+│   ├── editor.js           # 编辑器：认证门禁/预览/草稿/粘贴/导出/登录/发布（create+update）
+│   └── diagram-highlight.js # 渲染后增强：Mermaid 图表 + highlight.js 代码高亮
+├── vendor/                 # ★ 自托管的第三方库（固定版本，无 CDN 运行时依赖）
+│   ├── mermaid/            # Mermaid 9.4.3（mermaid.min.js + LICENSE + package.json）
+│   └── highlight/          # highlight.js 11.9.0（highlight.min.js + 主题 CSS + LICENSE + package.json）
 ├── posts/
 │   ├── rtos-priority-inversion.md
 │   ├── adc-sampling-stm32.md
@@ -154,6 +159,30 @@ npx serve
 
 标题、段落、加粗 `**`、斜体 `*`、删除线 `~~`、行内代码 `` ` ``、代码块 ` ``` `、
 引用 `>`、有序/无序列表、链接 `[text](url)`、图片 `![alt](src)`、分隔线 `---`、表格。
+
+围栏代码块按语言标记做渲染后增强：
+
+- ` ```mermaid ` 渲染成 SVG 图表（流程图、时序图、类图、甘特图、git 图等）。
+- ` ```js ` / ` ```c ` / ` ```json ` / ` ```cpp ` 等带语言标记的代码块做语法高亮。
+- 没有语言标记的 ` ``` ` 保持普通代码块外观。
+
+> 这套增强是「渲染后」机制：`SimpleMarkdown.render()` 仍输出经过 HTML 转义、带 `class="language-<lang>"` 的安全 `<pre><code>`，再由 `js/diagram-highlight.js` 在节点挂到 DOM 后扫描并替换。Mermaid 用 `securityLevel: "strict"` 且源码取 `textContent`（不解析 HTML），高亮走 `hljs.highlightElement`，二者都不引入新的未转义 HTML。Mermaid 9.4.3 与 highlight.js 11.9.0 都自托管在 `vendor/`，无 CDN 运行时依赖；库没加载或单块渲染失败时降级为原始可读代码。切主题时 Mermaid 会按新主题重渲染，highlight.js 的深浅主题 CSS 也会切换。
+
+### 写 Mermaid 图表时的注意点
+
+本站用的是 **Mermaid 9.4.3**（自托管，见 `vendor/mermaid/`），不是最新的 10+。它的渲染 API 是**同步回调式**（`mermaid.render(id, code, cb)`，回调里拿到 SVG 字符串再插入 DOM），不是 Promise 链。`js/diagram-highlight.js` 已按这套 API 实现，改这个文件时不要套用 Mermaid 10+ 的 `.then()` 写法（9.4.3 下返回的是字符串而非 Promise，`typeof ret.then === "function"` 恒为 false，会算出 SVG 后又丢弃，表现为「没报错也没图表」）。
+
+**标签里有特殊字符要加双引号。** 9.4.3 的词法分析对节点标签里的下列字符比较敏感，不加双引号会同步抛错并降级为源码展示：
+
+| 要双引号的字符 | 错误写法 | 正确写法 |
+| --- | --- | --- |
+| `#`（如 `#if`、`#define`） | `A[#if foo]` | `A["#if foo"]` |
+| `:` `=` `<` `>` `;` | `B[sys_cb.x = 1]` | `B["sys_cb.x = 1"]` |
+| 全角 `：`、箭头 `→` | `C[混合：A → B]` | `C["混合：A → B"]` |
+| 斜杠 `/` | `D[a / b]` | `D["a / b"]` |
+| 括号 `（ ）`、文件后缀如 `.xm` `.h` | `E[Output/bin/xcfg.xm]` | `E["Output/bin/xcfg.xm"]` |
+
+经验法则：节点文本里只要出现上述任一字符，就用双引号把整个标签包起来（`X["..."]`）。这些图在 Typora（Mermaid 10+）里能正常显示，不等于在 9.4.3 里也能正常显示，本地预览时务必通过 HTTP 服务器打开文章页确认图表渲染成 SVG。
 
 ## License
 
