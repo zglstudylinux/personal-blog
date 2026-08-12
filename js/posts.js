@@ -14,15 +14,7 @@
      file     : Markdown 文件路径（相对站点根，默认 posts/<slug>.md）
    ============================================================ */
 window.POSTS = [
-    {
-    slug: "rtos-priority-inversion",
-    title: "RTOS 里的优先级反转：一次调试记录",
-    date: "2026-08-03",
-    excerpt: "高优先级任务被低优先级任务卡死，背后是一个互斥锁。从现象到定位，再到优先级继承的修复过程。",
-    category: "RTOS",
-    tags: ["RTOS","调试","FreeRTOS"],
-    file: "posts/rtos-priority-inversion.md"
-  },
+    
   {
     slug: "adc-sampling-stm32",
     title: "STM32 ADC 多通道采样与 DMA 配置笔记",
