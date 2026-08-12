@@ -47,5 +47,14 @@ window.POSTS = [
     category: "AB5766",
     tags: ["AB5766"],
     file: "posts/ab5766-le-mic.md"
+  },
+  {
+    slug: "slug-test01",
+    title: "AB5766 LE Mic 音频算法调用链与测试快速入门",
+    date: "2026-08-12",
+    excerpt: "",
+    category: "AB5766",
+    tags: [],
+    file: "posts/slug-test01.md"
   }
 ];
