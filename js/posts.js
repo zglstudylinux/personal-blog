@@ -15,14 +15,7 @@
    ============================================================ */
 window.POSTS = [
     
-  {
-    slug: "adc-sampling-stm32",
-    title: "STM32 ADC 多通道采样与 DMA 配置笔记",
-    date: "2026-07-18",
-    excerpt: "用 DMA 做多通道 ADC 采集，省 CPU 又不掉采样率。记录 CubeMX 配置和踩过的几个坑。",
-    category: "STM32 外设",
-    tags: ["STM32", "ADC", "DMA", "硬件"]
-  },
+  
   {
     slug: "uart-ring-buffer",
     title: "UART 接收：环形缓冲区 + 空闲中断的方案",
