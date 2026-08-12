@@ -168,6 +168,7 @@
     fExcerpt.value = d.excerpt || "";
     input.value = d.content || "";
     renderPreview();
+    updateDeleteBtn();
   }
 
   // ---------- 实时预览 ----------
@@ -268,6 +269,7 @@
     refreshDraftSelect();
     if (listDrafts().length === 0) newDraft();
     else loadDraft(listDrafts()[0].key);
+    updateDeleteBtn();
   }
 
   function deleteDraftBySlug(slug) {
@@ -290,6 +292,7 @@
     renderPreview();
     setStatus("新草稿", "ok");
     refreshDraftSelect();
+    updateDeleteBtn();
   }
 
   // ---------- 已发布文章选择 / 载入编辑 ----------
@@ -314,7 +317,11 @@
     var p = findPostBySlug(slug);
     if (!p) { setStatus("找不到文章：" + slug, "err"); return; }
     setStatus("正在载入「" + p.title + "」…", "info");
-    fetch(p.file || ("posts/" + slug + ".md"))
+    // 加 cache-busting 查询参数：重新发布后浏览器/GitHub Pages 可能缓存旧 .md，
+    // 不带版本号会一直返回上次发布前的内容。只破坏缓存，不影响解析（SimpleMarkdown 不看 query）。
+    var mdUrl = p.file || ("posts/" + slug + ".md");
+    var bust = (mdUrl.indexOf("?") === -1 ? "?" : "&") + "v=" + Date.now();
+    fetch(mdUrl + bust)
       .then(function (r) {
         if (!r.ok) throw new Error("拉取正文失败 (" + r.status + ")");
         return r.text();
@@ -334,6 +341,7 @@
         var sel = $("publishedSelect");
         if (sel) sel.value = p.slug;
         setStatus("已载入「" + p.title + "」，修改后点发布即更新线上", "ok");
+        updateDeleteBtn();
       })
       .catch(function (e) {
         setStatus("载入失败：" + e.message, "err");
@@ -541,8 +549,60 @@
       if (sel) sel.value = payload.slug;
       // 刷新已发布清单（新建后让新文章出现在下拉里）
       refreshPublishedSelect();
+      updateDeleteBtn();
     }).catch(function (e) {
       setStatus("发布失败：" + e.message, "err");
+    });
+  }
+
+  // ---------- 删除已发布文章 ----------
+  // 删除按钮只在「正在编辑某篇已发布文章」（editingSlug 非空）时可用。
+  function updateDeleteBtn() {
+    var btn = $("btnDeletePublished");
+    if (!btn) return;
+    btn.disabled = !editingSlug;
+  }
+
+  function deletePublished() {
+    if (!apiBase) { setStatus("未配置后端 API，无法删除", "err"); return; }
+    if (!editingSlug) { setStatus("请先「载入编辑」一篇已发布文章再删除", "err"); return; }
+    var slug = editingSlug;
+    // 二次确认：删除不可逆，会连同正文与图片一起从 main 删除
+    var ok = window.confirm(
+      "确定删除文章「" + slug + "」？\n\n" +
+      "这会从 main 分支删除 posts/" + slug + ".md、js/posts.js 中的注册表条目，" +
+      "以及正文中引用的 assets/images/ 图片。此操作不可撤销。"
+    );
+    if (!ok) return;
+    setStatus("正在删除「" + slug + "」…", "info");
+    fetch(apiBase + "/api/posts/delete", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slug: slug })
+    }).then(function (r) {
+      if (r.status === 401) { relock(); throw new Error("未登录，请重新登录"); }
+      if (r.status === 409) throw new Error("与远程冲突，请点「载入编辑」重新拉取后再删除");
+      if (!r.ok) {
+        return r.json().then(function (body) {
+          var msg = (body && body.error) || ("删除失败 (" + r.status + ")");
+          if (body && body.partial) msg = "部分删除：" + msg + "。请到仓库检查残留文件。";
+          throw new Error(msg);
+        });
+      }
+      return r.json();
+    }).then(function (res) {
+      setStatus(res.message || ("已删除「" + slug + "」"), "ok");
+      // 删除该 slug 的本地草稿（若有）
+      deleteDraftBySlug(slug);
+      // 重置为新建草稿状态
+      editingSlug = null;
+      fSlug.disabled = false;
+      // 从已发布下拉移除该项
+      refreshPublishedSelect();
+      newDraft();
+    }).catch(function (e) {
+      setStatus("删除失败：" + e.message, "err");
     });
   }
 
@@ -587,6 +647,11 @@
     });
   }
 
+  var delPubBtn = $("btnDeletePublished");
+  if (delPubBtn) {
+    delPubBtn.addEventListener("click", deletePublished);
+  }
+
   var loginEl = $("authLogin");
   if (loginEl) {
     loginEl.addEventListener("click", function (e) {
@@ -601,6 +666,7 @@
         .finally(function () {
           editingSlug = null;
           if (fSlug) fSlug.disabled = false;
+          updateDeleteBtn();
           applyAuthState(false, null);
           setGateStatus("已退出登录", "info");
         });
@@ -627,6 +693,7 @@
       if (drafts.length) loadDraft(drafts[0].key); else newDraft();
     }
     setStatus("就绪，已登录为 " + (authedUser ? authedUser.login : ""), "ok");
+    updateDeleteBtn();
   }
 
   // ---------- 初始化 ----------

@@ -763,6 +763,14 @@ hr {
 }
 .editor-btn--primary:hover { filter: brightness(1.05); border-color: var(--accent); }
 .editor-btn--primary:disabled { background: var(--bg-soft); color: var(--text-faint); border-color: var(--border); }
+/* 删除按钮：用与错误状态一致的红色作为「危险操作」语义色，不引入第二个装饰强调色。 */
+.editor-btn--danger {
+  background: transparent;
+  border-color: #e5484d;
+  color: #e5484d;
+}
+.editor-btn--danger:not(:disabled):hover { background: #e5484d; color: #fff; }
+.editor-btn--danger:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .editor-auth {
   display: flex;

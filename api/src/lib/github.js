@@ -77,3 +77,15 @@ export async function getSha(env, branch, path) {
   if (!res.ok) throw new Error("getSha " + res.status);
   return { exists: true, sha: res.data.sha, content: res.data.content || "" };
 }
+
+// 删除某路径文件（必须带 SHA）。用 GitHub Contents DELETE API。
+// 返回 { ok, status }；404 视为「已不存在」按 ok 处理（幂等），方便清理孤儿资源时重试。
+export async function deleteFile(env, path, sha, message) {
+  const res = await ghApi(env, "DELETE", "/contents/" + path, {
+    message: message,
+    branch: env.IMAGES_BRANCH || "main",
+    sha: sha
+  });
+  if (res.status === 404) return { ok: true, status: 404, gone: true };
+  return { ok: res.ok, status: res.status };
+}

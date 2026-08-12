@@ -28,7 +28,7 @@ import {
   validatePost, sanitizeMarkdown, slugOk, dateOk
 } from "./lib/validate.js";
 import { githubLogin, githubExchange, ghApi } from "./lib/github.js";
-import { publishPost } from "./lib/publish.js";
+import { publishPost, deletePost } from "./lib/publish.js";
 import { commitImage } from "./lib/images.js";
 
 // ---------- 入口 ----------
@@ -45,7 +45,8 @@ export default {
     const writePaths = new Set([
       "/api/auth/login", "/api/auth/callback", "/api/auth/logout",
       "/api/images/upload",
-      "/api/posts/validate", "/api/posts/publish"
+      "/api/posts/validate", "/api/posts/publish",
+      "/api/posts/delete"
     ]);
     const originOk = writePaths.has(path) ? requireOrigin(request, env) : true;
     if (!originOk) return err("forbidden origin", 403);
@@ -64,6 +65,7 @@ export default {
           case "/api/images/upload":  return handleImageUpload(request, env);
           case "/api/posts/validate": return handleValidate(request, env);
           case "/api/posts/publish":  return handlePublish(request, env);
+          case "/api/posts/delete":   return handleDelete(request, env);
           case "/":                   return json({ ok: true, service: "blog-api" });
           default: return err("not found", 404);
         }
@@ -344,6 +346,44 @@ async function handlePublish(request, env) {
     });
   }
   // 冲突 → 409；部分更新（正文已写、注册表未写）→ 500 但带 partial 标记
+  const status = result.conflict ? 409 : (result.partial ? 500 : 502);
+  return json({ ok: false, error: result.error, partial: !!result.partial, conflict: !!result.conflict }, status);
+}
+
+// ============================================================
+// POST /api/posts/delete
+// body: { slug }
+// 删除已发布文章：先删 js/posts.js 注册表条目，再删 posts/<slug>.md，
+// 再删正文中引用的 assets/images/... 图片。非原子，partial 标记各阶段失败。
+// ============================================================
+async function handleDelete(request, env) {
+  const u = await sessionUser(request, env);
+  if (!u) return err("unauthorized", 401);
+
+  let body;
+  try { body = await request.json(); } catch (e) { return err("bad json", 400); }
+
+  const slug = String(body && body.slug || "").trim();
+  if (!slugOk(slug)) return json({ ok: false, errors: ["slug 无效"] }, 422);
+
+  const result = await deletePost(env, slug, u);
+  if (result.ok) {
+    let message = "已删除文章「" + slug + "」";
+    if (result.imagesTotal > 0) {
+      if (result.imagesFailed.length === 0) {
+        message += "，并清理了 " + result.imagesTotal + " 张图片。";
+      } else {
+        message += "，正文与注册表已删，但 " + result.imagesFailed.length + "/" + result.imagesTotal + " 张图片未删净，需手动到仓库 assets/images/ 删除。";
+      }
+    }
+    return json({
+      ok: true,
+      slug: slug,
+      imagesTotal: result.imagesTotal || 0,
+      imagesFailed: result.imagesFailed || [],
+      message: message
+    });
+  }
   const status = result.conflict ? 409 : (result.partial ? 500 : 502);
   return json({ ok: false, error: result.error, partial: !!result.partial, conflict: !!result.conflict }, status);
 }

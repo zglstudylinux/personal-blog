@@ -13,6 +13,7 @@ GitHub Pages 本身不能安全写回仓库，也不能保存 GitHub Token 或�
 - **作者白名单**：只允许 `ALLOWED_GH_IDS` 里的 GitHub 数字 user id 发布。
 - **图片上传**：`/api/images/upload` 校验类型/大小/魔数后，用 GitHub Contents API 把图片提交到 `assets/images/<yyyy>/<mm>/<uuid>.<ext>`，返回站点根相对路径，直接写进 Markdown。随 GitHub Pages 一起部署，无需对象存储。
 - **发布**：`/api/posts/publish` 服务端校验后，作者登录后**直接写 `main` 分支**，同时提交 `posts/<slug>.md` 与 `js/posts.js` 注册表。`mode: "create"` 新建（slug 必须不存在），`mode: "update"` 用 SHA 更新已有文章并替换同 slug 的注册表条目。**不再创建 PR**，发布即上线。两次 Contents API 调用按「先正文后注册表」顺序，第二步失败返回 `partial: true`，不伪称成功。
+- **删除**：`/api/posts/delete` 删除已发布文章，按「先注册表、后正文、最后图片」顺序清理。先删 `js/posts.js` 中的注册表条目（文章立即从站点消失），再删 `posts/<slug>.md` 正文，再用 Contents DELETE 逐个删正文中引用的 `assets/images/...` 图片（带 SHA）。非原子：注册表删失败则整体失败无副作用；正文删失败返回 `partial`；图片删失败仍算成功，返回 `imagesFailed` 列表由作者手动清理。
 
 ## 接口
 
@@ -25,6 +26,7 @@ GitHub Pages 本身不能安全写回仓库，也不能保存 GitHub Token 或�
 | POST | `/api/images/upload` | `{ type, size, data }` → `{ ok, publicUrl }`（data 为 data URL 或纯 base64；提交到 Git 仓库 `assets/images/`） |
 | POST | `/api/posts/validate` | dry-run 校验，不写仓 |
 | POST | `/api/posts/publish` | 校验 + 直接写 `main`：`mode: "create"` 新建（slug 不存在）/ `mode: "update"` 更新（带 SHA）。成功返回 `{ ok, mode, slug, message }`；冲突 409，部分成功 500 带 `partial: true` |
+| POST | `/api/posts/delete` | 删除已发布文章 `{ slug }`：先删 `js/posts.js` 注册表条目，再删 `posts/<slug>.md`，再删正文中引用的 `assets/images/...` 图片。成功返回 `{ ok, slug, imagesTotal, imagesFailed, message }`；非原子，各阶段失败带 `partial`/`conflict` |
 
 ## 部署步骤
 
@@ -116,13 +118,13 @@ api/
         ├── http.js        # 响应 / CORS / 频率限制
         ├── jwt.js         # 极简 HS256 会话 token
         ├── validate.js    # 服务端内容校验与 Markdown 净化
-        ├── github.js      # OAuth 换 token + REST API 调用
-        ├── publish.js     # 直接写 main：create / update + 注册表条目
+        ├── github.js      # OAuth 换 token + REST API 调用（getSha / deleteFile）
+        ├── publish.js     # 直接写 main：create / update / delete + 注册表条目
         └── images.js      # 图片提交到 Git 仓库 assets/images/
 ```
 
 ## MVP 边界
 
-第一版只做：单作者 GitHub 登录、会话、图片直接提交进 Git 仓库 `assets/images/`、发布直接写 `main`（create / update）、服务端校验与基础安全防护。
+第一版只做：单作者 GitHub 登录、会话、图片直接提交进 Git 仓库 `assets/images/`、发布直接写 `main`（create / update）、删除已发布文章并清理图片、服务端校验与基础安全防护。
 
-暂不做：多作者权限、云端草稿同步、定时发布、孤儿图片清理、自动合并冲突编辑器、生产级频率限制（当前是 Worker 内存计数，跨实例不共享，生产建议用 KV / Durable Object）。
+暂不做：多作者权限、云端草稿同步、定时发布、自动合并冲突编辑器、生产级频率限制（当前是 Worker 内存计数，跨实例不共享，生产建议用 KV / Durable Object）。

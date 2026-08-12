@@ -99,6 +99,8 @@ GitHub Pages：Settings → Pages → Source = `Deploy from a branch`，分支 `
    - 粘贴截图：`apiBase` 为空 → `blob:` 本机预览；非空 → 客户端读成 data URL，单次 POST `/api/images/upload`，Worker 校验类型/大小/魔数后用 GitHub Contents API 提交到 `assets/images/<yyyy>/<mm>/<uuid>.<ext>`，返回站点根相对路径插入 Markdown。不走对象存储 / R2。
    - **正文里存的是仓库相对路径 `assets/images/...`**（发布到线上后正确），但本地工作副本里没有 Worker 刚提交的图，static server 会 404。`renderPreview()` 用 `rebaseImgSrc()` 把预览 DOM 里的 `<img src="assets/images/...">` 临时改写成 `cfg.gitRawBase`（`raw.githubusercontent.com/.../main` 直链，非密钥）显示——**只改预览 DOM 的 src，不改正文 textarea**，发布内容不受影响。`uploadImage()` 还会在上传前先用 `blob:` URL 在 `#pastePreview` 即时显示图，不等网络往返。改预览逻辑时记住这条「正文路径 ≠ 预览 src」的拆分，不要把 raw 直链写进正文。
    - 发布 POST `/api/posts/publish`，发 `mode: "create" | "update"`；处理 401（`relock()` 重新锁定工作区）/409（slug 冲突或 SHA 冲突，区分提示）/`partial`（正文已写、注册表未写，不伪称成功）；成功提示「已直接发布到 main，GitHub Pages 自动部署，注意缓存延迟」，不再提 PR。
+   - **载入已发布文章编辑时，`loadPublishedForEdit()` 给 `posts/<slug>.md` 的 fetch 拼 `?v=<Date.now()>` cache-busting**。重新发布后浏览器/GitHub Pages 会缓存旧 `.md`，不带版本号会一直返回发布前的旧正文，让人误以为更新没生效。这只破坏缓存，不影响解析。
+   - **删除已发布文章**：`#btnDeletePublished` 仅在 `editingSlug` 非空（已载入某篇已发布文章）时可用（`updateDeleteBtn()` 统一管）。点「删除」→ `window.confirm` 二次确认 → POST `/api/posts/delete` `{slug}`，处理 401/409/`partial`；成功后删该 slug 的本地草稿、`refreshPublishedSelect()`、`newDraft()` 重置。删除按钮用 `.editor-btn--danger`（红色语义色，与 `.editor-status.is-err` 一致，**不是第二个装饰强调色**）。
 
 2. **后端 Worker**（`api/src/`，与静态站点**不同域名**，独立部署）：
    - 路由与安全铁律见 `api/README.md` 和 `api/src/worker.js` 顶部注释。
@@ -110,5 +112,6 @@ GitHub Pages：Settings → Pages → Source = `Deploy from a branch`，分支 `
      - `mode: "create"`：`getSha` 确认 Markdown **不存在**（存在 → 409），PUT 提交正文，再 `appendToRegistry` 在 `window.POSTS = [` 与 `];` 之间追加条目。
      - `mode: "update"`：`getSha` 确认 Markdown **存在**，PUT 带该 SHA 更新正文，再 `updateRegistryEntry` 用 `findEntryRange()`（花括号深度解析，处理字符串里的花括号与转义）定位同 slug 的顶层 `{...}` 块并替换，其它条目不变。注册表 PUT 带其 SHA。
      - 两次 GitHub Contents API 调用非原子，按「先正文后注册表」顺序；第二步失败 → `partial: true`，不伪称成功，不暴露 token/堆栈。SHA 冲突 → `conflict: true` + 409 提示重新载入。`buildPostEntry` 缩进 2 空格，`appendToRegistry` 只去尾空白不 trim（保留首条缩进，避免塌陷）。**不要把 `inline(s, codes)` 的递归 `codes` 教训照搬误改这里的字符串注入逻辑**——它不是同一个不变量。
+   - 删除：`api/src/lib/publish.js` 的 `deletePost(env, slug, user)` 走「先注册表、后正文、最后图片」顺序。`removeRegistryEntry(src, slug)` 复用 `findEntryRange()` 定位顶层 `{...}` 块，并连带吃掉块后或块前的逗号（保证剩余条目间逗号恰好一份），再折叠多余空行。`extractImagePaths(md)` 只认 `assets/images/...` 相对路径并去重。`api/src/lib/github.js` 的 `deleteFile(env, path, sha, message)` 用 GitHub Contents DELETE API（必须带 SHA；404 视为已删，幂等，方便清理孤儿时重试）。删除非原子：注册表删失败 → 整体失败无副作用；注册表删成功但正文删失败 → `partial`；正文删成功但部分图片删失败 → 仍算成功，返回 `imagesFailed` 列表让作者手动清理。删除用 `IMAGES_BRANCH`（= `main`）。
 
 **安全铁律（不可违反）：** GitHub PAT / OAuth Secret / SESSION_SECRET 只能来自 `wrangler secret put`，绝不写进 `wrangler.toml`、`js/`、HTML、localStorage 或日志。前端只持 HttpOnly cookie，永远拿不到 PAT。客户端校验仅为体验，服务端必须再校验一遍。`mode` 由前端给但服务端以远程文件是否存在为最终判据（不能由前端绕过冲突规则）。改 Worker 代码后用 `npx wrangler dev` 本地验证，不要把 Secret 硬编码。
