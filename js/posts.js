@@ -41,5 +41,14 @@ window.POSTS = [
     category: "AB5766",
     tags: [],
     file: "posts/slug-test01.md"
+  },
+  {
+    slug: "slug-image",
+    title: "图片测试",
+    date: "2026-08-12",
+    excerpt: "",
+    category: "",
+    tags: [],
+    file: "posts/slug-image.md"
   }
 ];
